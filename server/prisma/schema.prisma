@@ -1,0 +1,308 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgentStatus {
+  draft
+  active
+  archived
+}
+
+enum SkillStatus {
+  active
+  deprecated
+  disabled
+}
+
+enum ProviderStatus {
+  active
+  inactive
+  testing
+  error
+}
+
+enum ExecutionStatus {
+  pending
+  running
+  succeeded
+  failed
+  timeout
+  cancelled
+}
+
+enum TraceStepType {
+  thought
+  action
+  observation
+  final_answer
+  error
+}
+
+enum AgentMemoryType {
+  preference
+  fact
+  goal
+  summary
+}
+
+enum KnowledgeBaseStatus {
+  active
+  archived
+}
+
+enum KnowledgeDocumentSourceType {
+  upload
+  manual
+  url
+}
+
+enum KnowledgeDocumentStatus {
+  processing
+  ready
+  failed
+}
+
+model Agent {
+  id            String        @id @default(uuid()) @db.VarChar(36)
+  name          String        @db.VarChar(255)
+  description   String?       @db.Text
+  status        AgentStatus   @default(draft)
+  llmProviderId String        @map("llm_provider_id") @db.VarChar(36)
+  systemPrompt  String?       @map("system_prompt") @db.Text
+  maxSteps      Int           @default(6) @map("max_steps")
+  timeoutMs     Int           @default(60000) @map("timeout_ms")
+  temperature   Decimal?      @db.Decimal(4, 2)
+  topP          Decimal?      @map("top_p") @db.Decimal(4, 2)
+  skillIds      Json?         @map("skill_ids")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  llmProvider   LlmProvider   @relation(fields: [llmProviderId], references: [id])
+  executions    Execution[]
+  conversations Conversation[]
+  memories      AgentMemory[]
+
+  @@index([status])
+  @@index([llmProviderId])
+  @@map("agents")
+}
+
+model Skill {
+  id               String      @id @default(uuid()) @db.VarChar(36)
+  skillKey         String      @map("skill_key") @db.VarChar(100)
+  name             String      @db.VarChar(255)
+  version          String      @db.VarChar(50)
+  description      String?     @db.Text
+  status           SkillStatus @default(active)
+  executorKey      String?     @map("executor_key") @db.VarChar(100)
+  parametersSchema Json        @map("parameters_schema")
+  returnsSchema    Json        @map("returns_schema")
+  tags             Json?
+  timeoutMs        Int?        @map("timeout_ms")
+  retryPolicy      Json?       @map("retry_policy")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@unique([skillKey, version])
+  @@index([skillKey])
+  @@index([status])
+  @@map("skills")
+}
+
+model LlmProvider {
+  id                     String         @id @default(uuid()) @db.VarChar(36)
+  providerKey            String         @unique @map("provider_key") @db.VarChar(100)
+  name                   String         @db.VarChar(255)
+  providerType           String         @map("provider_type") @db.VarChar(50)
+  model                  String         @db.VarChar(255)
+  apiBaseUrl             String?        @map("api_base_url") @db.VarChar(1024)
+  apiKeyMasked           String?        @map("api_key_masked") @db.VarChar(255)
+  config                 Json?
+  status                 ProviderStatus @default(active)
+  costPer1kInputTokens   Decimal?       @map("cost_per_1k_input_tokens") @db.Decimal(10, 6)
+  costPer1kOutputTokens  Decimal?       @map("cost_per_1k_output_tokens") @db.Decimal(10, 6)
+  lastHealthCheckAt      DateTime?      @map("last_health_check_at")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+  agents                 Agent[]
+  executions             Execution[]
+
+  @@index([status])
+  @@index([providerType])
+  @@map("llm_providers")
+}
+
+model Execution {
+  id           String          @id @default(uuid()) @db.VarChar(36)
+  agentId      String          @map("agent_id") @db.VarChar(36)
+  conversationId String?       @map("conversation_id") @db.VarChar(36)
+  traceId      String          @unique @map("trace_id") @db.VarChar(100)
+  inputText    String          @map("input_text") @db.Text
+  outputText   String?         @map("output_text") @db.Text
+  status       ExecutionStatus @default(pending)
+  providerId   String?         @map("provider_id") @db.VarChar(36)
+  stepCount    Int?            @map("step_count")
+  tokensUsed   Int?            @map("tokens_used")
+  cost         Decimal?        @db.Decimal(10, 6)
+  startedAt    DateTime?       @map("started_at")
+  endedAt      DateTime?       @map("ended_at")
+  durationMs   Int?            @map("duration_ms")
+  errorCode    String?         @map("error_code") @db.VarChar(100)
+  errorMessage String?         @map("error_message") @db.Text
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  agent        Agent           @relation(fields: [agentId], references: [id])
+  conversation Conversation?   @relation(fields: [conversationId], references: [id])
+  provider     LlmProvider?    @relation(fields: [providerId], references: [id])
+  traces       ExecutionTrace[]
+  knowledgeRetrievals KnowledgeRetrievalLog[]
+
+  @@index([agentId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([status])
+  @@map("executions")
+}
+
+model KnowledgeBase {
+  id          String              @id @default(uuid()) @db.VarChar(36)
+  name        String              @db.VarChar(255)
+  description String?             @db.Text
+  status      KnowledgeBaseStatus @default(active)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  documents   KnowledgeDocument[]
+  retrievals  KnowledgeRetrievalLog[]
+
+  @@index([status])
+  @@map("knowledge_bases")
+}
+
+model KnowledgeDocument {
+  id              String                      @id @default(uuid()) @db.VarChar(36)
+  knowledgeBaseId String                      @map("knowledge_base_id") @db.VarChar(36)
+  title           String                      @db.VarChar(255)
+  sourceType      KnowledgeDocumentSourceType @map("source_type")
+  sourceUri       String?                     @map("source_uri") @db.VarChar(1024)
+  fileName        String?                     @map("file_name") @db.VarChar(255)
+  filePath        String?                     @map("file_path") @db.VarChar(1024)
+  mimeType        String?                     @map("mime_type") @db.VarChar(255)
+  fileSize        Int?                        @map("file_size")
+  rawText         String?                     @map("raw_text") @db.LongText
+  status          KnowledgeDocumentStatus     @default(processing)
+  chunkCount      Int                         @default(0) @map("chunk_count")
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
+  knowledgeBase   KnowledgeBase               @relation(fields: [knowledgeBaseId], references: [id])
+  chunks          KnowledgeChunk[]
+  retrievals      KnowledgeRetrievalLog[]
+
+  @@index([knowledgeBaseId, status])
+  @@index([sourceType])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String                  @id @default(uuid()) @db.VarChar(36)
+  documentId String                  @map("document_id") @db.VarChar(36)
+  chunkIndex Int                     @map("chunk_index")
+  content    String                  @db.LongText
+  keywords   Json?
+  tokenCount Int                     @default(0) @map("token_count")
+  charCount  Int                     @default(0) @map("char_count")
+  metadata   Json?
+  createdAt  DateTime                @default(now()) @map("created_at")
+  document   KnowledgeDocument       @relation(fields: [documentId], references: [id])
+  retrievals KnowledgeRetrievalLog[]
+
+  @@index([documentId, chunkIndex])
+  @@map("knowledge_chunks")
+}
+
+model KnowledgeRetrievalLog {
+  id              String            @id @default(uuid()) @db.VarChar(36)
+  executionId     String            @map("execution_id") @db.VarChar(36)
+  query           String            @db.Text
+  knowledgeBaseId String            @map("knowledge_base_id") @db.VarChar(36)
+  documentId      String            @map("document_id") @db.VarChar(36)
+  chunkId         String            @map("chunk_id") @db.VarChar(36)
+  score           Decimal?          @db.Decimal(10, 6)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  execution       Execution         @relation(fields: [executionId], references: [id])
+  knowledgeBase   KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id])
+  document        KnowledgeDocument @relation(fields: [documentId], references: [id])
+  chunk           KnowledgeChunk    @relation(fields: [chunkId], references: [id])
+
+  @@index([executionId, createdAt])
+  @@index([knowledgeBaseId, createdAt])
+  @@map("knowledge_retrieval_logs")
+}
+
+model Conversation {
+  id          String      @id @default(uuid()) @db.VarChar(36)
+  agentId     String      @map("agent_id") @db.VarChar(36)
+  title       String      @db.VarChar(255)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  agent       Agent       @relation(fields: [agentId], references: [id])
+  executions  Execution[]
+  memories    ConversationMemorySnapshot[]
+
+  @@index([agentId, updatedAt])
+  @@map("conversations")
+}
+
+model ConversationMemorySnapshot {
+  id              String       @id @default(uuid()) @db.VarChar(36)
+  conversationId  String       @map("conversation_id") @db.VarChar(36)
+  summary         String       @db.Text
+  keyFacts        Json?        @map("key_facts")
+  openTasks       Json?        @map("open_tasks")
+  userPreferences Json?        @map("user_preferences")
+  messageCount    Int          @default(0) @map("message_count")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, updatedAt])
+  @@map("conversation_memory_snapshots")
+}
+
+model AgentMemory {
+  id                   String          @id @default(uuid()) @db.VarChar(36)
+  agentId              String          @map("agent_id") @db.VarChar(36)
+  memoryType           AgentMemoryType @map("memory_type")
+  content              String          @db.Text
+  importance           Int             @default(1)
+  sourceConversationId String?         @map("source_conversation_id") @db.VarChar(36)
+  lastAccessedAt       DateTime?       @map("last_accessed_at")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+  agent                Agent           @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, memoryType])
+  @@index([importance, updatedAt])
+  @@map("agent_memories")
+}
+
+model ExecutionTrace {
+  id         String        @id @default(uuid()) @db.VarChar(36)
+  executionId String       @map("execution_id") @db.VarChar(36)
+  traceId    String        @map("trace_id") @db.VarChar(100)
+  stepIndex  Int           @map("step_index")
+  stepType   TraceStepType @map("step_type")
+  content    String        @db.Text
+  toolName   String?       @map("tool_name") @db.VarChar(255)
+  toolInput  Json?         @map("tool_input")
+  toolOutput Json?         @map("tool_output")
+  durationMs Int?          @map("duration_ms")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  execution  Execution     @relation(fields: [executionId], references: [id])
+
+  @@index([executionId, stepIndex])
+  @@index([traceId])
+  @@map("execution_traces")
+}

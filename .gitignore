@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.DS_Store
+.idea
+server/node_modules
+web/node_modules
+server/dist
+web/dist
+web/.next
+server/prisma/dev.db
