@@ -1,3 +1,5 @@
+'use client';
+
 import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Drawer, Empty, Form, Input, message, Popconfirm, Select, Space, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -15,11 +17,18 @@ interface AgentFormValues {
   status: 'draft' | 'active' | 'archived';
 }
 
-export function AgentsPage() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [providers, setProviders] = useState<LlmProvider[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [messageText, setMessageText] = useState('加载中...');
+interface AgentsPageProps {
+  initialAgents?: Agent[];
+  initialProviders?: LlmProvider[];
+  initialSkills?: Skill[];
+  initialMessageText?: string;
+}
+
+export function AgentsPage({ initialAgents = [], initialProviders = [], initialSkills = [], initialMessageText = '加载中...' }: AgentsPageProps) {
+  const [agents, setAgents] = useState<Agent[]>(initialAgents);
+  const [providers, setProviders] = useState<LlmProvider[]>(initialProviders);
+  const [skills, setSkills] = useState<Skill[]>(initialSkills);
+  const [messageText, setMessageText] = useState(initialMessageText);
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | Agent['status']>('all');
@@ -34,10 +43,6 @@ export function AgentsPage() {
     setSkills(skillList);
     setMessageText('智能体列表已刷新');
   }
-
-  useEffect(() => {
-    void refresh().catch((error: Error) => setMessageText(error.message));
-  }, []);
 
   async function handleCreate(values: AgentFormValues) {
     if (!providers[0]) {

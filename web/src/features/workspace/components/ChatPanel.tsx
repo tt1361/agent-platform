@@ -6,14 +6,14 @@ import {
   PaperClipOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Card, Dropdown, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Collapse, Dropdown, Space, Tag, Typography, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { Bubble, Sender, Attachments } from '@ant-design/x';
 import type { BubbleListProps } from '@ant-design/x';
 import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../services/api';
-import type { Conversation, KnowledgeRetrievalItem } from '../../../types/api';
+import type { Conversation, KnowledgeRetrievalItem, TraceStep } from '../../../types/api';
 
 const { Text, Paragraph } = Typography;
 
@@ -22,6 +22,8 @@ interface ChatPanelProps {
   input: string;
   currentExecutionId?: string;
   knowledgeRetrievals: KnowledgeRetrievalItem[];
+  traceStepsMap?: Record<string, TraceStep[]>;
+  streamingAnswer?: string;
   modelLabel: string;
   languageLabel: '中文' | 'English';
   modelOptions: Array<{ label: string; value: string }>;
@@ -35,8 +37,6 @@ interface ChatPanelProps {
   onOpenContext: () => void;
   onOpenKnowledge: () => void;
   onOpenSkills: () => void;
-  onOpenTrace: () => void;
-  onSelectTrace: (traceId: string) => void;
   onRetryExecution: (inputText: string) => void;
   pending: boolean;
   pendingInput?: string;
@@ -115,6 +115,8 @@ export function ChatPanel({
   input,
   currentExecutionId,
   knowledgeRetrievals,
+  traceStepsMap,
+  streamingAnswer,
   modelLabel,
   languageLabel,
   modelOptions,
@@ -128,8 +130,6 @@ export function ChatPanel({
   onOpenContext,
   onOpenKnowledge,
   onOpenSkills,
-  onOpenTrace,
-  onSelectTrace,
   onRetryExecution,
   pending,
   pendingInput,
@@ -147,6 +147,25 @@ export function ChatPanel({
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [voiceDuration, setVoiceDuration] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [displayedAnswer, setDisplayedAnswer] = useState('');
+
+  useEffect(() => {
+    if (!streamingAnswer) {
+      setDisplayedAnswer('');
+      return;
+    }
+
+    if (streamingAnswer.length <= displayedAnswer.length) {
+      setDisplayedAnswer(streamingAnswer);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setDisplayedAnswer(streamingAnswer.slice(0, displayedAnswer.length + Math.ceil(streamingAnswer.length / 20)));
+    }, 30);
+
+    return () => clearTimeout(timeout);
+  }, [streamingAnswer, displayedAnswer]);
 
   useEffect(() => {
     latestInputRef.current = input;
@@ -363,12 +382,35 @@ export function ChatPanel({
       return list;
     }
 
+    const traceTypeMap: Record<string, string> = {
+      thought: '思考',
+      action: '执行',
+      observation: '观察',
+      final_answer: '最终回答',
+      error: '错误',
+    };
+
+    function getExecutionTraceSteps(execution: { traceId?: string | null }) {
+      const traceId = execution.traceId;
+      if (!traceId || !traceStepsMap) return [];
+      const steps = traceStepsMap[traceId] || [];
+      return steps.filter((step) => step.stepType !== 'final_answer' && step.stepType !== 'error');
+    }
+
     (conversation.executions ?? []).forEach((execution) => {
       const isCurrentExecution = execution.id === currentExecutionId;
-      const referenceText = isCurrentExecution && indexedMessageSources.length > 0
+      const executionTraceSteps = getExecutionTraceSteps(execution);
+      
+      const isGenerating = pending && isCurrentExecution && streamingAnswer;
+      const finalAnswerText = isGenerating ? displayedAnswer : (execution.outputText || '');
+      const isThinking = pending && isCurrentExecution && !streamingAnswer;
+      
+      const referenceText = isCurrentExecution && indexedMessageSources.length > 0 && !isGenerating
         ? `\n\n参考来源：${indexedMessageSources.map((item) => `[${item.refLabel}]`).join(' ')}`
         : '';
-      const assistantText = `${execution.outputText || '本轮执行失败，请查看 Trace 分析原因，或直接重试本条消息。'}${referenceText}`;
+      const assistantText = isThinking 
+        ? '思考中...' 
+        : `${finalAnswerText || (isGenerating ? '' : '本轮执行失败，请查看 Trace 分析原因，或直接重试本条消息。')}${referenceText}`;
 
       list.push({
         key: `user-${execution.id}`,
@@ -390,6 +432,31 @@ export function ChatPanel({
         content: (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
              <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{assistantText}</Typography.Paragraph>
+             {executionTraceSteps.length > 0 && (
+               <Collapse
+                 ghost
+                 size="small"
+                 items={[
+                   {
+                     key: 'thinking',
+                     label: <Text type="secondary">思考过程 ({executionTraceSteps.length} 步)</Text>,
+                     children: (
+                       <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                         {executionTraceSteps.map((step, idx) => (
+                           <div key={step.id || idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < executionTraceSteps.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+                             <Space>
+                               <Tag color={step.stepType === 'thought' ? 'blue' : step.stepType === 'action' ? 'orange' : 'green'}>{traceTypeMap[step.stepType] || step.stepType}</Tag>
+                               <Text type="secondary">步骤 {step.stepIndex}</Text>
+                             </Space>
+                             <Paragraph style={{ marginTop: 4, marginBottom: 0, fontSize: 13 }}>{step.content}</Paragraph>
+                           </div>
+                         ))}
+                       </div>
+                     ),
+                   },
+                 ]}
+               />
+             )}
              {isCurrentExecution && indexedMessageSources.length > 0 && (
                 <div style={{ background: 'rgba(0,0,0,0.02)', padding: '8px 12px', borderRadius: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>本次回答参考资料</Text>
@@ -406,19 +473,20 @@ export function ChatPanel({
         ),
         header: (
           <Space align="center">
-            <Text strong>{execution.status === 'succeeded' ? '智能体' : '执行异常'}</Text>
-            <Tag bordered={false} color={getExecutionStatusMeta(execution.status).color}>{getExecutionStatusMeta(execution.status).label}</Tag>
+            <Text strong>{isThinking ? '思考中' : isGenerating ? '生成中' : execution.status === 'succeeded' ? '智能体' : '执行异常'}</Text>
+            <Tag bordered={false} color={isThinking ? 'processing' : isGenerating ? 'blue' : getExecutionStatusMeta(execution.status).color}>
+              {isThinking ? '思考中' : isGenerating ? '生成中' : getExecutionStatusMeta(execution.status).label}
+            </Tag>
             <Text type="secondary">{formatMessageTime(execution.createdAt)}</Text>
           </Space>
         ),
         footer: (
           <Space wrap size="small">
-            <Button size="small" type="text" onClick={() => onSelectTrace(execution.traceId)}>查看 Trace</Button>
-            {execution.outputText ? <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void handleCopy(execution.outputText || '')}>复制回答</Button> : null}
-            {execution.status !== 'succeeded' ? <Button size="small" type="text" onClick={() => onRetryExecution(execution.inputText)}>重试本条</Button> : null}
+            {!isGenerating && execution.outputText ? <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void handleCopy(execution.outputText || '')}>复制回答</Button> : null}
+            {!isGenerating && execution.status !== 'succeeded' ? <Button size="small" type="text" onClick={() => onRetryExecution(execution.inputText)}>重试本条</Button> : null}
           </Space>
         ),
-        variant: execution.status === 'succeeded' ? 'borderless' : 'filled',
+        variant: isThinking || isGenerating ? 'borderless' : execution.status === 'succeeded' ? 'borderless' : 'filled',
       });
     });
 
@@ -456,19 +524,35 @@ export function ChatPanel({
            header: <Space><Text type="secondary">刚刚</Text><Text>用户</Text><Tag bordered={false} color="processing">发送中</Tag></Space>
          });
        }
-       list.push({
-         key: 'pending-agent',
-         role: 'ai',
-         placement: 'start',
-         loading: true,
-         content: thinkingMessage,
-         header: <Space><Text strong>智能体</Text><Tag bordered={false} color="blue">思考中</Tag></Space>,
-         variant: 'borderless',
-       });
+       
+       if (streamingAnswer) {
+         list.push({
+           key: 'pending-agent-streaming',
+           role: 'ai',
+           placement: 'start',
+           content: (
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+               <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{displayedAnswer}</Typography.Paragraph>
+             </div>
+           ),
+           header: <Space><Text strong>智能体</Text><Tag bordered={false} color="blue">生成中</Tag></Space>,
+           variant: 'borderless',
+         });
+       } else {
+         list.push({
+           key: 'pending-agent',
+           role: 'ai',
+           placement: 'start',
+           loading: true,
+           content: thinkingMessage,
+           header: <Space><Text strong>智能体</Text><Tag bordered={false} color="processing">思考中</Tag></Space>,
+           variant: 'borderless',
+         });
+       }
     }
 
     return list;
-  }, [conversation, currentExecutionId, indexedMessageSources, interruptedInput, pending, pendingInput, thinkingMessage, onSelectTrace, handleCopy, onRetryExecution]);
+  }, [conversation, currentExecutionId, indexedMessageSources, interruptedInput, pending, pendingInput, thinkingMessage, handleCopy, onRetryExecution, traceStepsMap, streamingAnswer, displayedAnswer]);
 
   return (
     <Card className="console-card workspace-chat-card" bordered={false}>
@@ -530,11 +614,10 @@ export function ChatPanel({
                  </Button>
                </Dropdown>
                <Button size="small" type="text" onClick={onToggleLanguage}>{languageLabel}</Button>
-               <Button size="small" type="text" onClick={onOpenContext}>上下文</Button>
-               <Button size="small" type="text" onClick={onOpenKnowledge}>知识</Button>
-               <Button size="small" type="text" onClick={onOpenSkills}>技能</Button>
-               <Button size="small" type="text" onClick={onOpenTrace}>Trace</Button>
-               <Button
+                <Button size="small" type="text" onClick={onOpenContext}>上下文</Button>
+                <Button size="small" type="text" onClick={onOpenKnowledge}>知识</Button>
+                <Button size="small" type="text" onClick={onOpenSkills}>技能</Button>
+                <Button
                  size="small"
                  type="text"
                  icon={isListening ? <LoadingOutlined /> : <AudioOutlined />}

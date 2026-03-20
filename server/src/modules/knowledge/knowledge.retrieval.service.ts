@@ -1,5 +1,11 @@
 import { prisma } from '../../lib/prisma.js';
 
+const SOURCE_STOP_WORDS = new Set([
+  '这是', '一个', '一些', '这个', '那个', '我们', '你们', '他们', '可以', '需要', '如果', '因为', '所以', '以及', '或者', '然后', '进行', '相关',
+  '问题', '回答', '内容', '信息', '资料', '文档', '知识', '来源', '参考', '总结', '说明', '情况', '例如', '比如', '当前', '本次', '建议', '支持',
+  'the', 'and', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'were', 'have', 'has', 'had', 'into', 'about', 'your', 'you', 'they', 'their',
+]);
+
 const CHINESE_STOP_PHRASES = [
   '什么情况下',
   '什么情形下',
@@ -32,6 +38,82 @@ function normalizeText(value: string) {
     .replace(/[，。！？、；：,.!?;:()[\]{}"'`<>《》【】]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function tokenizeSourceText(value: string) {
+  const normalized = normalizeText(value);
+  const chineseCompact = normalized.replace(/\s+/g, '');
+  const chineseSegments = chineseCompact.match(/[\u4e00-\u9fa5]+/g) ?? [];
+  const englishTokens = normalized.match(/[a-z0-9_-]{3,}/g) ?? [];
+  const tokens = new Set<string>();
+
+  for (const token of englishTokens) {
+    if (!SOURCE_STOP_WORDS.has(token)) tokens.add(token);
+  }
+
+  for (const segment of chineseSegments) {
+    if (segment.length <= 4 && !SOURCE_STOP_WORDS.has(segment)) tokens.add(segment);
+    for (let size = 2; size <= 4; size += 1) {
+      if (segment.length < size) continue;
+      for (let index = 0; index <= segment.length - size; index += 1) {
+        const token = segment.slice(index, index + size);
+        if (!SOURCE_STOP_WORDS.has(token)) tokens.add(token);
+      }
+    }
+  }
+
+  return tokens;
+}
+
+export interface KnowledgeRetrievalResultItem {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  documentId: string;
+  documentTitle: string;
+  sourceType: 'upload' | 'manual' | 'url';
+  sourceUri?: string | null;
+  chunkId: string;
+  chunkIndex: number;
+  content: string;
+  score: number;
+  createdAt?: Date;
+}
+
+function dedupeByDocument(items: KnowledgeRetrievalResultItem[]) {
+  const grouped = new Map<string, KnowledgeRetrievalResultItem>();
+  for (const item of items) {
+    const current = grouped.get(item.documentId);
+    if (!current || item.score > current.score) grouped.set(item.documentId, item);
+  }
+  return [...grouped.values()];
+}
+
+function filterCitedItems(items: KnowledgeRetrievalResultItem[], answerText?: string | null) {
+  const answer = answerText?.trim();
+  if (!answer) return [];
+
+  const normalizedAnswer = normalizeText(answer);
+  const compactAnswer = normalizedAnswer.replace(/\s+/g, '');
+  const answerTokens = tokenizeSourceText(answer);
+  if (answerTokens.size === 0) return [];
+
+  const hasEvidenceCue = /(根据|依据|参考|结合|资料显示|文档显示|手册显示|制度显示|条款|规定|制度|手册|办法|政策)/.test(answer);
+
+  return dedupeByDocument(items.filter((item) => {
+    const titleCompact = normalizeText(item.documentTitle).replace(/\s+/g, '');
+    if (titleCompact.length >= 4 && compactAnswer.includes(titleCompact)) return true;
+
+    const sourceTokens = tokenizeSourceText(`${item.documentTitle} ${item.content}`);
+    if (sourceTokens.size === 0) return false;
+
+    let overlap = 0;
+    for (const token of answerTokens) {
+      if (sourceTokens.has(token)) overlap += 1;
+    }
+
+    if (hasEvidenceCue && (overlap >= 3 || item.score >= 18)) return true;
+    return overlap >= 8 || (overlap >= 5 && item.score >= 20);
+  }));
 }
 
 function unique<T>(items: T[]) {
@@ -317,4 +399,6 @@ export const knowledgeRetrievalService = {
       createdAt: log.createdAt,
     }));
   },
+
+  listCitedByAnswer: async (items: KnowledgeRetrievalResultItem[], answerText?: string | null) => filterCitedItems(items, answerText),
 };

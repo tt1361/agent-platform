@@ -1,9 +1,11 @@
+'use client';
+
 import { EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Collapse, Descriptions, Drawer, Empty, Input, Select, Space, Table, Tag, Timeline, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../../services/api';
-import type { Execution, TraceStep } from '../../../types/api';
+import type { Execution, KnowledgeRetrievalItem, TraceStep } from '../../../types/api';
 import { PageHeader } from '../../../shared/components/PageHeader';
 
 const { Paragraph } = Typography;
@@ -16,13 +18,19 @@ const traceTypeMap: Record<string, string> = {
   error: '错误',
 };
 
-export function ExecutionsPage() {
-  const [executions, setExecutions] = useState<Execution[]>([]);
+interface ExecutionsPageProps {
+  initialExecutions?: Execution[];
+  initialMessageText?: string;
+}
+
+export function ExecutionsPage({ initialExecutions = [], initialMessageText = '加载中...' }: ExecutionsPageProps) {
+  const [executions, setExecutions] = useState<Execution[]>(initialExecutions);
   const [traceSteps, setTraceSteps] = useState<TraceStep[]>([]);
+  const [citedRetrievals, setCitedRetrievals] = useState<KnowledgeRetrievalItem[]>([]);
   const [selectedExecution, setSelectedExecution] = useState<Execution | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [traceId, setTraceId] = useState('');
-  const [messageText, setMessageText] = useState('加载中...');
+  const [messageText, setMessageText] = useState(initialMessageText);
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | string>('all');
 
@@ -33,10 +41,6 @@ export function ExecutionsPage() {
     setExecutions(merged);
     setMessageText(`共加载 ${merged.length} 条执行记录`);
   }
-
-  useEffect(() => {
-    void refresh().catch((error: Error) => setMessageText(error.message));
-  }, []);
 
   const filteredExecutions = useMemo(() => {
     return executions.filter((execution) => {
@@ -51,6 +55,7 @@ export function ExecutionsPage() {
     setTraceId(nextTraceId);
     setTraceSteps(trace.steps);
     setSelectedExecution(trace.execution);
+    setCitedRetrievals(trace.citedRetrievals ?? []);
     setDrawerOpen(true);
   }
 
@@ -126,6 +131,22 @@ export function ExecutionsPage() {
                 <Descriptions.Item label="问题摘要">{selectedExecution.inputText}</Descriptions.Item>
               </Descriptions>
             ) : null}
+
+            {citedRetrievals.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, display: 'block', marginBottom: 8 }}>本次回答引用的知识来源</div>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  {citedRetrievals.map((item, index) => (
+                    <Descriptions key={item.chunkId} column={1} size="small" bordered style={{ background: '#fafafa' }}>
+                      <Descriptions.Item label="来源">{index + 1} · {item.documentTitle}</Descriptions.Item>
+                      <Descriptions.Item label="知识库">{item.knowledgeBaseName}</Descriptions.Item>
+                      <Descriptions.Item label="片段">{item.chunkIndex}</Descriptions.Item>
+                      <Descriptions.Item label="引用内容"><Paragraph ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>{item.content}</Paragraph></Descriptions.Item>
+                    </Descriptions>
+                  ))}
+                </Space>
+              </div>
+            )}
 
             <Collapse
               defaultActiveKey={['thought', 'action', 'observation', 'final_answer', 'error']}

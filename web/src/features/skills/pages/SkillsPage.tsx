@@ -1,3 +1,5 @@
+'use client';
+
 import { DeleteOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Drawer, Empty, Form, Input, message, Popconfirm, Segmented, Select, Space, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -15,11 +17,17 @@ interface SkillFormValues {
   status: 'active' | 'deprecated' | 'disabled';
 }
 
-export function SkillsPage() {
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
+interface SkillsPageProps {
+  initialSkills?: Skill[];
+  initialAvailableSkills?: Skill[];
+  initialMessageText?: string;
+}
+
+export function SkillsPage({ initialSkills = [], initialAvailableSkills = [], initialMessageText = '加载中...' }: SkillsPageProps) {
+  const [skills, setSkills] = useState<Skill[]>(initialSkills);
+  const [availableSkills, setAvailableSkills] = useState<Skill[]>(initialAvailableSkills);
   const [open, setOpen] = useState(false);
-  const [messageText, setMessageText] = useState('加载中...');
+  const [messageText, setMessageText] = useState(initialMessageText);
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | NonNullable<Skill['status']>>('all');
   const [activeTab, setActiveTab] = useState<'installed' | 'available'>('installed');
@@ -33,10 +41,6 @@ export function SkillsPage() {
     setAvailableSkills(discoveredItems);
     setMessageText(`已安装 ${installedItems.length} 个技能，发现 ${discoveredItems.length} 个可用插件`);
   }
-
-  useEffect(() => {
-    void refresh().catch((error: Error) => setMessageText(error.message));
-  }, []);
 
   async function handleInstall(skill: Skill) {
     await api.createSkill({

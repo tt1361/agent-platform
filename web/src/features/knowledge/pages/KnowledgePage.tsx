@@ -1,3 +1,5 @@
+'use client';
+
 import { DeleteOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Empty, Form, Input, List, Modal, Row, Space, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
@@ -7,11 +9,18 @@ import { PageHeader } from '../../../shared/components/PageHeader';
 
 const { Paragraph, Text } = Typography;
 
-export function KnowledgePage() {
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [selectedBaseId, setSelectedBaseId] = useState('');
-  const [statusText, setStatusText] = useState('加载知识库中...');
+interface KnowledgePageProps {
+  initialBases?: KnowledgeBase[];
+  initialDocuments?: KnowledgeDocument[];
+  initialStatusText?: string;
+  initialSelectedBaseId?: string;
+}
+
+export function KnowledgePage({ initialBases = [], initialDocuments = [], initialStatusText = '加载知识库中...', initialSelectedBaseId = '' }: KnowledgePageProps) {
+  const [bases, setBases] = useState<KnowledgeBase[]>(initialBases);
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>(initialDocuments);
+  const [selectedBaseId, setSelectedBaseId] = useState(initialSelectedBaseId);
+  const [statusText, setStatusText] = useState(initialStatusText);
   const [createOpen, setCreateOpen] = useState(false);
   const [manualForm] = Form.useForm<{ title: string; content: string }>();
   const [baseForm] = Form.useForm<{ name: string; description?: string }>();
@@ -39,9 +48,11 @@ export function KnowledgePage() {
   }
 
   useEffect(() => {
-    void refreshBases()
-      .then((baseId) => refreshDocuments(baseId))
-      .catch((error: Error) => setStatusText(error.message));
+    if (initialBases.length === 0) {
+      void refreshBases()
+        .then((baseId) => refreshDocuments(baseId))
+        .catch((error: Error) => setStatusText(error.message));
+    }
   }, []);
 
   useEffect(() => {

@@ -163,7 +163,7 @@ export const api = {
   deleteSkill: (skillId: string) => request<Skill>(`/api/v1/skills/${skillId}`, { method: 'DELETE' }),
   listProviders: () => request<LlmProvider[]>('/api/v1/llm-providers'),
   testProvider: (providerId: string) => request<ProviderTestResult>(`/api/v1/llm-providers/${providerId}/test`, { method: 'POST' }),
-  getTrace: (traceId: string) => request<{ execution: Execution; steps: TraceStep[]; retrievals: KnowledgeRetrievalItem[] }>(`/api/v1/traces/${traceId}`),
+  getTrace: (traceId: string) => request<{ execution: Execution; steps: TraceStep[]; retrievals: KnowledgeRetrievalItem[]; citedRetrievals: KnowledgeRetrievalItem[] }>(`/api/v1/traces/${traceId}`),
   listAgentMemories: (agentId: string) => request<AgentMemory[]>(`/api/v1/agents/${agentId}/memories`),
   updateAgentMemoryImportance: (agentId: string, memoryId: string, importance: number) =>
     request<AgentMemory>(`/api/v1/agents/${agentId}/memories/${memoryId}`, {

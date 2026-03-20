@@ -1,3 +1,5 @@
+'use client';
+
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Empty, Input, message, Modal, Space, Spin, Tag } from 'antd';
 import { api } from '../../../services/api';
@@ -45,19 +47,29 @@ function WorkspaceSectionFallback({ title }: { title: string }) {
   );
 }
 
-export function WorkspacePage() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [providers, setProviders] = useState<LlmProvider[]>([]);
+interface WorkspacePageProps {
+  initialAgents?: Agent[];
+  initialSkills?: Skill[];
+  initialProviders?: LlmProvider[];
+  initialConversations?: Conversation[];
+  initialStatusText?: string;
+}
+
+export function WorkspacePage({ initialAgents = [], initialSkills = [], initialProviders = [], initialConversations = [], initialStatusText = '正在加载基础数据...' }: WorkspacePageProps) {
+  const [agents, setAgents] = useState<Agent[]>(initialAgents);
+  const [skills, setSkills] = useState<Skill[]>(initialSkills);
+  const [providers, setProviders] = useState<LlmProvider[]>(initialProviders);
   const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
   const [selectedConversationId, setSelectedConversationId] = useState('');
   const [traceId, setTraceId] = useState('');
-  const [traceSteps, setTraceSteps] = useState<TraceStep[]>([]);
+  const [traceStepsMap, setTraceStepsMap] = useState<Record<string, TraceStep[]>>({});
   const [conversationMemory, setConversationMemory] = useState<ConversationMemorySnapshot | null>(null);
   const [agentMemories, setAgentMemories] = useState<AgentMemory[]>([]);
   const [recentMemoryUpdates, setRecentMemoryUpdates] = useState<MemoryUpdateItem[]>([]);
   const [knowledgeRetrievals, setKnowledgeRetrievals] = useState<KnowledgeRetrievalItem[]>([]);
+  const [citedKnowledgeRetrievals, setCitedKnowledgeRetrievals] = useState<KnowledgeRetrievalItem[]>([]);
+  const [streamingAnswer, setStreamingAnswer] = useState('');
   const [providerTest, setProviderTest] = useState<ProviderTestResult | null>(null);
   const [taskInput, setTaskInput] = useState('');
   const [pendingInput, setPendingInput] = useState('');
@@ -65,7 +77,7 @@ export function WorkspacePage() {
   const [replyLanguage, setReplyLanguage] = useState<'中文' | 'English'>('中文');
   const [lastError, setLastError] = useState('');
   const [lastFailedInput, setLastFailedInput] = useState('');
-  const [statusText, setStatusText] = useState('正在加载基础数据...');
+  const [statusText, setStatusText] = useState(initialStatusText);
   const [pending, setPending] = useState(false);
   const [testingProvider, setTestingProvider] = useState(false);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
@@ -106,8 +118,10 @@ export function WorkspacePage() {
     setPendingInput(nextInput);
     setInterruptedInput('');
     setTaskInput('');
-    setTraceSteps([]);
+    setTraceStepsMap({});
     setKnowledgeRetrievals([]);
+    setCitedKnowledgeRetrievals([]);
+    setStreamingAnswer('');
     setStatusText(`智能体正在分析上下文并生成${replyLanguage === 'English' ? '英文' : '中文'}回答...`);
     abortControllerRef.current = new AbortController();
 
@@ -137,15 +151,18 @@ export function WorkspacePage() {
           trace_step: (payload) => {
             const data = payload as { step?: TraceStep & { traceId?: string } };
             const incomingStep = data.step;
-            if (!incomingStep) return;
-            setTraceSteps((current) => {
-              const next = current.filter((item) => item.stepIndex !== incomingStep.stepIndex || item.stepType !== incomingStep.stepType);
-              return [...next, incomingStep].sort((left, right) => left.stepIndex - right.stepIndex);
+            if (!incomingStep || !incomingStep.traceId) return;
+            setTraceStepsMap((current) => {
+              const traceId = incomingStep.traceId!;
+              const existing = current[traceId] || [];
+              const next = existing.filter((item) => item.stepIndex !== incomingStep.stepIndex || item.stepType !== incomingStep.stepType);
+              return { ...current, [traceId]: [...next, incomingStep].sort((left, right) => left.stepIndex - right.stepIndex) };
             });
-            if (incomingStep.traceId) {
-              setTraceId(incomingStep.traceId);
-            }
+            setTraceId(incomingStep.traceId);
             setStatusText(`执行中：${incomingStep.stepType}`);
+          },
+          answer_start: () => {
+            setStatusText('正在生成回答...');
           },
           completed: (payload) => {
             streamedResult = (payload as { result: RunAgentResult }).result;
@@ -180,12 +197,14 @@ export function WorkspacePage() {
       setInterruptedInput('');
       setLastError('');
       setLastFailedInput('');
+      setStreamingAnswer(result.output || '');
       setTraceId(result.traceId);
-      setTraceSteps(trace.steps);
+      setTraceStepsMap((current) => ({ ...current, [result.traceId]: trace.steps }));
       setConversationMemory(shortMemory);
       setAgentMemories(longMemories);
       setRecentMemoryUpdates(result.memoryUpdate?.updatedLongTermMemories ?? []);
       setKnowledgeRetrievals(result.knowledgeRetrievals ?? []);
+      setCitedKnowledgeRetrievals(result.citedKnowledgeRetrievals ?? trace.citedRetrievals ?? []);
       setSelectedConversationId(result.conversationId);
       setConversations((current) => {
         const normalizedConversation = normalizeConversation(conversation);
@@ -202,6 +221,7 @@ export function WorkspacePage() {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setLastError('');
         setLastFailedInput(nextInput);
+        setStreamingAnswer('');
         return;
       }
       const nextMessage = error instanceof Error ? error.message : '执行失败';
@@ -211,6 +231,7 @@ export function WorkspacePage() {
       message.error(nextMessage);
     } finally {
       setPendingInput('');
+      setStreamingAnswer('');
       setPending(false);
       abortControllerRef.current = null;
     }
@@ -255,9 +276,14 @@ export function WorkspacePage() {
   }
 
   useEffect(() => {
-    void refreshBaseData()
-      .then(() => setStatusText('基础数据已加载'))
-      .catch((error: Error) => setStatusText(error.message));
+    if (initialAgents.length === 0) {
+      void refreshBaseData()
+        .then(() => setStatusText('基础数据已加载'))
+        .catch((error: Error) => setStatusText(error.message));
+    } else if (initialAgents.length > 0 && !selectedAgentId) {
+      setSelectedAgentId(initialAgents[0].id);
+      setStatusText('基础数据已加载');
+    }
   }, []);
 
   useEffect(() => {
@@ -274,18 +300,35 @@ export function WorkspacePage() {
     setLastError('');
     setLastFailedInput('');
     setRecentMemoryUpdates([]);
+    setStreamingAnswer('');
     void Promise.all([api.getConversation(selectedConversationId), api.getConversationMemory(selectedConversationId)])
       .then(async ([conversation, memory]) => {
         const normalizedConversation = normalizeConversation(conversation);
         setConversations((current) => current.map((item) => (item.id === normalizedConversation.id ? normalizedConversation : item)));
         setConversationMemory(memory);
-        const latestExecution = normalizedConversation.executions[normalizedConversation.executions.length - 1];
-        if (latestExecution?.traceId) {
-          const trace = await api.getTrace(latestExecution.traceId);
-          setKnowledgeRetrievals(trace.retrievals ?? []);
+        const newTraceStepsMap: Record<string, TraceStep[]> = {};
+        const tracesToFetch = normalizedConversation.executions
+          .filter((exec) => exec.traceId)
+          .map((exec) => exec.traceId!);
+        
+        if (tracesToFetch.length > 0) {
+          const traces = await Promise.all(tracesToFetch.map((traceId) => api.getTrace(traceId)));
+          normalizedConversation.executions.forEach((exec, index) => {
+            if (exec.traceId && traces[index]) {
+              newTraceStepsMap[exec.traceId] = traces[index].steps ?? [];
+            }
+          });
+          const latestExecution = normalizedConversation.executions[normalizedConversation.executions.length - 1];
+          if (latestExecution?.traceId) {
+            const latestTrace = traces.find((t) => t) ?? { retrievals: [], citedRetrievals: [] };
+            setKnowledgeRetrievals(latestTrace.retrievals ?? []);
+            setCitedKnowledgeRetrievals(latestTrace.citedRetrievals ?? []);
+          }
         } else {
           setKnowledgeRetrievals([]);
+          setCitedKnowledgeRetrievals([]);
         }
+        setTraceStepsMap(newTraceStepsMap);
       })
       .catch((error: Error) => setStatusText(error.message));
   }, [selectedConversationId]);
@@ -321,8 +364,9 @@ export function WorkspacePage() {
       setConversationMemory(null);
       setRecentMemoryUpdates([]);
       setKnowledgeRetrievals([]);
+      setCitedKnowledgeRetrievals([]);
       setTraceId('');
-      setTraceSteps([]);
+      setTraceStepsMap({});
       setInterruptedInput('');
       setLastError('');
       setLastFailedInput('');
@@ -366,9 +410,10 @@ export function WorkspacePage() {
         if (selectedConversationId === conversationId) {
           setSelectedConversationId('');
           setTraceId('');
-          setTraceSteps([]);
+          setTraceStepsMap({});
           setInterruptedInput('');
           setKnowledgeRetrievals([]);
+          setCitedKnowledgeRetrievals([]);
         }
         if (selectedAgentId) await refreshConversations(selectedAgentId);
         setStatusText('会话已删除');
@@ -400,8 +445,9 @@ export function WorkspacePage() {
   async function handleSelectTrace(nextTraceId: string) {
     setTraceId(nextTraceId);
     const trace = await api.getTrace(nextTraceId);
-    setTraceSteps(trace.steps);
+    setTraceStepsMap((current) => ({ ...current, [nextTraceId]: trace.steps }));
     setKnowledgeRetrievals(trace.retrievals ?? []);
+    setCitedKnowledgeRetrievals(trace.citedRetrievals ?? []);
     setTimeout(() => {
       const traceCard = document.getElementById('trace-content-card');
       if (traceCard) {
@@ -494,7 +540,7 @@ export function WorkspacePage() {
             conversation={selectedConversation}
             input={taskInput}
             currentExecutionId={currentExecution?.id}
-            knowledgeRetrievals={knowledgeRetrievals}
+            knowledgeRetrievals={citedKnowledgeRetrievals}
             modelLabel={currentModelLabel}
             languageLabel={replyLanguage}
             modelOptions={providers.map((provider) => ({ value: provider.id, label: `${provider.name} · ${provider.model}` }))}
@@ -507,9 +553,7 @@ export function WorkspacePage() {
             onStop={handleStop}
             onOpenContext={() => scrollToPanel('memory-overview-card')}
             onOpenSkills={() => scrollToPanel('bound-skills-card')}
-            onOpenTrace={() => scrollToPanel('trace-content-card')}
             onOpenKnowledge={() => scrollToPanel('knowledge-retrieval-card')}
-            onSelectTrace={(id) => void handleSelectTrace(id)}
             onRetryExecution={handleRetryExecution}
             pending={pending}
             pendingInput={pendingInput}
@@ -517,6 +561,8 @@ export function WorkspacePage() {
             errorMessage={lastError}
             lastFailedInput={lastFailedInput}
             onQuickPrompt={handleQuickPrompt}
+            traceStepsMap={traceStepsMap}
+            streamingAnswer={streamingAnswer}
           />
         </Suspense>
 
@@ -525,13 +571,14 @@ export function WorkspacePage() {
           agent={selectedAgent}
           skills={skills}
           traceId={traceId}
-          traceSteps={traceSteps}
+          traceStepsMap={traceStepsMap}
           currentExecution={currentExecution}
           providerTest={providerTest}
           conversationMemory={conversationMemory}
           agentMemories={agentMemories}
           recentMemoryUpdates={recentMemoryUpdates}
           knowledgeRetrievals={knowledgeRetrievals}
+          citedKnowledgeRetrievals={citedKnowledgeRetrievals}
             onPinMemory={(memoryId, importance) => void handlePinMemory(memoryId, importance)}
             onDeleteMemory={(memoryId) => void handleDeleteMemory(memoryId)}
           />

@@ -17,13 +17,14 @@ interface ExecutionInspectorProps {
   agent?: Agent;
   skills: Skill[];
   traceId: string;
-  traceSteps: TraceStep[];
+  traceStepsMap?: Record<string, TraceStep[]>;
   currentExecution?: Execution;
   providerTest: ProviderTestResult | null;
   conversationMemory: ConversationMemorySnapshot | null;
   agentMemories: AgentMemory[];
   recentMemoryUpdates: MemoryUpdateItem[];
   knowledgeRetrievals: KnowledgeRetrievalItem[];
+  citedKnowledgeRetrievals?: KnowledgeRetrievalItem[];
   onPinMemory: (memoryId: string, importance: number) => void;
   onDeleteMemory: (memoryId: string) => void;
 }
@@ -39,13 +40,14 @@ export function ExecutionInspector({
   agent,
   skills,
   traceId,
-  traceSteps,
+  traceStepsMap,
   currentExecution,
   providerTest,
   conversationMemory,
   agentMemories,
   recentMemoryUpdates,
   knowledgeRetrievals,
+  citedKnowledgeRetrievals,
   onPinMemory,
   onDeleteMemory,
 }: ExecutionInspectorProps) {
@@ -53,6 +55,8 @@ export function ExecutionInspector({
   const [showAllMemories, setShowAllMemories] = useState(false);
 
   const boundSkills = agent?.skillIds?.length ? skills.filter((skill) => !!skill.id && agent.skillIds?.includes(skill.id) && skill.status === 'active') : [];
+
+  const traceSteps = traceStepsMap?.[traceId] || [];
 
   const filteredMemories = useMemo(() => {
     const base = memoryFilter === 'all' ? agentMemories : agentMemories.filter((memory) => memory.memoryType === memoryFilter);
@@ -262,50 +266,65 @@ export function ExecutionInspector({
       ) : null}
 
       <Card className="console-card hover-card" title="本轮知识检索" id="knowledge-retrieval-card">
-        {knowledgeRetrievals.length > 0 ? (
-          <List
-            size="small"
-            dataSource={knowledgeRetrievals}
-            renderItem={(item) => (
-              <List.Item>
-                <List.Item.Meta
-                  title={<Space wrap><Tag color="cyan">{item.knowledgeBaseName}</Tag><Tag>{item.documentTitle}</Tag><Text>分数 {item.score.toFixed(3)}</Text></Space>}
-                  description={<Space direction="vertical" size={4} style={{ width: '100%' }}><Paragraph ellipsis={{ rows: 3 }}>{item.content}</Paragraph>{item.sourceUri ? <Text type="secondary">来源：{item.sourceUri}</Text> : null}</Space>}
-                />
-              </List.Item>
-            )}
-          />
-        ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本轮没有命中知识库内容。" />
-        )}
-      </Card>
-
-      <Card className="console-card hover-card flex-card" title="最近 Trace" extra={traceId ? <Tag color="purple">{traceId}</Tag> : null} id="trace-content-card">
-        {traceSteps.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="执行一轮消息后，这里会展示思考、执行与观察摘要。" />
-        ) : (
-          <Collapse
-            ghost
-            defaultActiveKey={groupedTrace.map((group) => group.key)}
-            items={groupedTrace.map((group) => ({
-              key: group.key,
-              label: `${group.title} (${group.steps.length})`,
-              children: (
+        {knowledgeRetrievals.length > 0 || (citedKnowledgeRetrievals?.length ?? 0) > 0 ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {citedKnowledgeRetrievals && citedKnowledgeRetrievals.length > 0 && (
+              <div>
+                <Space style={{ marginBottom: 8 }}>
+                  <Text strong>本次回答引用的来源</Text>
+                  <Tag color="green">{citedKnowledgeRetrievals.length} 条</Tag>
+                </Space>
                 <List
-                  dataSource={group.steps}
-                  renderItem={(step) => (
-                    <List.Item className={step.stepType === 'final_answer' ? 'trace-list-item active' : 'trace-list-item'}>
+                  size="small"
+                  dataSource={citedKnowledgeRetrievals}
+                  renderItem={(item) => (
+                    <List.Item>
                       <List.Item.Meta
-                        avatar={step.stepType === 'action' ? <ExperimentOutlined /> : <ThunderboltOutlined />}
-                        title={<Space><Tag>{traceTypeMap[step.stepType] || step.stepType}</Tag><Text>步骤 {step.stepIndex}</Text></Space>}
-                        description={<Paragraph ellipsis={{ rows: 3 }}>{step.content}</Paragraph>}
+                        title={<Space wrap><Tag color="green">已引用</Tag><Tag color="cyan">{item.knowledgeBaseName}</Tag><Text type="secondary">{item.documentTitle}</Text></Space>}
+                        description={<Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{item.content}</Paragraph>}
                       />
                     </List.Item>
                   )}
                 />
-              ),
-            }))}
-          />
+              </div>
+            )}
+            {citedKnowledgeRetrievals && citedKnowledgeRetrievals.length > 0 && knowledgeRetrievals.length > citedKnowledgeRetrievals.length && (
+              <div>
+                <Space style={{ marginBottom: 8 }}>
+                  <Text type="secondary">其他检索命中（未在回答中引用）</Text>
+                  <Tag>{knowledgeRetrievals.length - citedKnowledgeRetrievals.length} 条</Tag>
+                </Space>
+                <List
+                  size="small"
+                  dataSource={knowledgeRetrievals.filter((item) => !citedKnowledgeRetrievals.some((c) => c.documentId === item.documentId))}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        title={<Space wrap><Tag color="default">未引用</Tag><Tag color="cyan">{item.knowledgeBaseName}</Tag><Text type="secondary">{item.documentTitle}</Text><Text type="secondary">分数 {item.score.toFixed(3)}</Text></Space>}
+                        description={<Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{item.content}</Paragraph>}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </div>
+            )}
+            {!citedKnowledgeRetrievals && (
+              <List
+                size="small"
+                dataSource={knowledgeRetrievals}
+                renderItem={(item) => (
+                  <List.Item>
+                    <List.Item.Meta
+                      title={<Space wrap><Tag color="cyan">{item.knowledgeBaseName}</Tag><Tag>{item.documentTitle}</Tag><Text>分数 {item.score.toFixed(3)}</Text></Space>}
+                      description={<Space direction="vertical" size={4} style={{ width: '100%' }}><Paragraph ellipsis={{ rows: 3 }}>{item.content}</Paragraph>{item.sourceUri ? <Text type="secondary">来源：{item.sourceUri}</Text> : null}</Space>}
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
+          </Space>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本轮没有命中知识库内容。" />
         )}
       </Card>
 

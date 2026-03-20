@@ -14,6 +14,9 @@ traceRouter.get('/:traceId', asyncHandler(async (req, res) => {
 
   const execution = await prisma.execution.findUnique({ where: { traceId } });
   const retrievals = execution ? await knowledgeRetrievalService.listByExecution(execution.id) : [];
-  res.json(ok({ execution, steps: traces, retrievals }));
+  const citedRetrievals = execution
+    ? await knowledgeRetrievalService.listCitedByAnswer(retrievals, execution.outputText)
+    : [];
+  res.json(ok({ execution, steps: traces, retrievals, citedRetrievals }));
 }));
 import { knowledgeRetrievalService } from '../knowledge/knowledge.retrieval.service.js';

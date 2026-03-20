@@ -112,6 +112,7 @@ export interface RunAgentResult {
     updatedLongTermMemories: MemoryUpdateItem[];
   };
   knowledgeRetrievals?: KnowledgeRetrievalItem[];
+  citedKnowledgeRetrievals?: KnowledgeRetrievalItem[];
 }
 
 export interface ApiResponse<T> {
