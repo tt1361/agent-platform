@@ -8,4 +8,6 @@ web/node_modules
 server/dist
 web/dist
 web/.next
+*.tsbuildinfo
+**/*.tsbuildinfo
 server/prisma/dev.db
