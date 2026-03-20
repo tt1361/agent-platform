@@ -3,11 +3,11 @@ dist
 .env
 .DS_Store
 .idea
-server/node_modules
-web/node_modules
-server/dist
-web/dist
-web/.next
 *.tsbuildinfo
 **/*.tsbuildinfo
-server/prisma/dev.db
+
+apps/api/dist
+apps/console/.next
+apps/console/tsconfig.tsbuildinfo
+apps/api/uploads
+apps/api/.env

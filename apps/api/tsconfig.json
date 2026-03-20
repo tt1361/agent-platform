@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "declaration": false,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./src",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallbackAliases": false,
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@agent-platform/database": [
+        "../../packages/database/src"
+      ],
+      "@agent-platform/shared": [
+        "../../packages/shared/src"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

@@ -1,18 +1,18 @@
 {
   "name": "agent-platform",
   "private": true,
-  "workspaces": [
-    "server",
-    "web"
-  ],
   "scripts": {
-    "postinstall": "npm run db:generate --workspace server",
-    "dev": "concurrently \"npm run dev --workspace server\" \"npm run dev --workspace web\"",
-    "dev:server": "npm run dev --workspace server",
-    "dev:web": "npm run dev --workspace web",
-    "build": "npm run build --workspace server && npm run build --workspace web"
+    "dev:api": "pnpm --filter api run dev",
+    "dev:console": "pnpm --filter console run dev",
+    "build:api": "pnpm --filter api run build",
+    "build:console": "pnpm --filter console run build",
+    "test:checklist": "node scripts/functional-checklist.mjs",
+    "test:buttons": "node scripts/page-button-checklist.mjs",
+    "db:push": "node scripts/prisma-with-env.mjs db push",
+    "db:seed": "pnpm --filter @agent-platform/database run db:seed",
+    "db:generate": "node scripts/prisma-with-env.mjs generate"
   },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
