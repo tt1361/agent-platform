@@ -6,6 +6,8 @@ import { conversationService } from '../../modules/conversations/conversation.se
 import { knowledgeRetrievalService } from '../../modules/knowledge/knowledge.retrieval.service.js';
 import { memoryService } from '../../modules/memories/memory.service.js';
 import { ChatMiniMax } from '../llm/langchain-minimax.js';
+import { ChatQwen } from '../llm/langchain-qwen.js';
+import { ChatGemini } from '../llm/langchain-gemini.js';
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage } from '@langchain/core/messages';
 
@@ -33,6 +35,7 @@ export type AgentRunEvent =
   | { type: 'status'; status: string; executionId: string; traceId: string; conversationId: string }
   | { type: 'retrievals'; executionId: string; traceId: string; items: Awaited<ReturnType<typeof knowledgeRetrievalService.retrieve>> }
   | { type: 'trace_step'; step: AgentTraceStreamStep }
+  | { type: 'answer_start'; executionId: string; traceId: string }
   | { type: 'completed'; result: Awaited<ReturnType<ReactAgentRunner['run']>> }
   | { type: 'failed'; error: { code: string; message: string; executionId: string; traceId: string; conversationId: string } };
 
@@ -290,9 +293,16 @@ ${item.content}`
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const langchainTools = skills.map((skill: any) => getLangchainTool(skill));
-    const model = new ChatMiniMax();
+    let model: any;
+    if (agent.llmProvider?.providerType === 'qwen') {
+      model = new ChatQwen();
+    } else if (agent.llmProvider?.providerType === 'gemini') {
+      model = new ChatGemini();
+    } else {
+      model = new ChatMiniMax();
+    }
     if (model.bindTools) {
-      model.bindTools(langchainTools);
+      model = model.bindTools(langchainTools);
     }
 
     const GraphState = Annotation.Root({
@@ -401,9 +411,11 @@ ${item.content}`
     const app = workflow.compile();
 
     try {
+      await this.emit(params, { type: 'answer_start', executionId: execution.id, traceId });
       const finalState = await app.invoke({ messages: initialMessages });
       const lastMessage = finalState.messages[finalState.messages.length - 1] as AIMessage;
       const answer = String(lastMessage.content ?? '');
+      const citedKnowledgeRetrievals = await knowledgeRetrievalService.listCitedByAnswer(retrievedKnowledge, answer);
 
       await this.recordTraceStep(params, {
         executionId: execution.id,
@@ -452,6 +464,7 @@ ${item.content}`
           updatedLongTermMemories,
         },
         knowledgeRetrievals: retrievedKnowledge,
+        citedKnowledgeRetrievals,
       };
       await this.emit(params, { type: 'completed', result });
       return result;

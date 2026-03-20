@@ -15,6 +15,6 @@ providerRouter.get('/:id', asyncHandler(async (req, res) => {
 }));
 
 providerRouter.post('/:id/test', asyncHandler(async (req, res) => {
-  getRequiredParam(req.params.id, 'id');
-  res.json(ok(await providerService.testConnection()));
+  const providerId = getRequiredParam(req.params.id, 'id');
+  res.json(ok(await providerService.testConnection(providerId)));
 }));

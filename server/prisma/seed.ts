@@ -26,6 +26,48 @@ async function main() {
     },
   });
 
+  const qwenProvider = await prisma.llmProvider.upsert({
+    where: { providerKey: 'qwen-default' },
+    update: {
+      name: '通义千问 Qwen',
+      providerType: 'qwen',
+      model: env.QWEN_MODEL,
+      apiBaseUrl: env.QWEN_BASE_URL,
+      apiKeyMasked: `${env.QWEN_API_KEY.slice(0, 6)}***${env.QWEN_API_KEY.slice(-4)}`,
+      status: 'active',
+    },
+    create: {
+      providerKey: 'qwen-default',
+      name: '通义千问 Qwen',
+      providerType: 'qwen',
+      model: env.QWEN_MODEL,
+      apiBaseUrl: env.QWEN_BASE_URL,
+      apiKeyMasked: `${env.QWEN_API_KEY.slice(0, 6)}***${env.QWEN_API_KEY.slice(-4)}`,
+      status: 'active',
+    },
+  });
+
+  const geminiProvider = await prisma.llmProvider.upsert({
+    where: { providerKey: 'gemini-default' },
+    update: {
+      name: 'Google Gemini',
+      providerType: 'gemini',
+      model: env.GEMINI_MODEL,
+      apiBaseUrl: env.GEMINI_BASE_URL,
+      apiKeyMasked: `${env.GEMINI_API_KEY.slice(0, 6)}***${env.GEMINI_API_KEY.slice(-4)}`,
+      status: 'active',
+    },
+    create: {
+      providerKey: 'gemini-default',
+      name: 'Google Gemini',
+      providerType: 'gemini',
+      model: env.GEMINI_MODEL,
+      apiBaseUrl: env.GEMINI_BASE_URL,
+      apiKeyMasked: `${env.GEMINI_API_KEY.slice(0, 6)}***${env.GEMINI_API_KEY.slice(-4)}`,
+      status: 'active',
+    },
+  });
+
   const sampleSkills = [
     {
       skillKey: 'echo',
