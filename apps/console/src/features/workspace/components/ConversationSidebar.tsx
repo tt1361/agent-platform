@@ -63,7 +63,7 @@ export function ConversationSidebar(props: ConversationSidebarProps) {
     ),
   }));
 
-  const menuForConversation = (item: any): ConversationsProps['menu'] => (event: any) => ({
+  const menuForConversation = (item: any) => ({
     items: [
       {
         key: 'rename',
@@ -77,7 +77,7 @@ export function ConversationSidebar(props: ConversationSidebarProps) {
         danger: true,
       },
     ],
-    onClick: (menuInfo) => {
+    onClick: (menuInfo: any) => {
       if (menuInfo.key === 'rename') {
         onRenameConversation(item.key);
       } else if (menuInfo.key === 'delete') {
@@ -126,7 +126,7 @@ export function ConversationSidebar(props: ConversationSidebarProps) {
             activeKey={selectedConversationId}
             onActiveChange={onSelectConversation}
             items={conversationItems}
-            menu={menuForConversation as any}
+            menu={menuForConversation}
           />
         )}
       </Card>
