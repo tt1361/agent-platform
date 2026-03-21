@@ -1,5 +1,7 @@
 import { DeleteOutlined, EditOutlined, MessageOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, List, Popconfirm, Select, Space, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Empty, Select, Space, Tag, Typography } from 'antd';
+import { Conversations } from '@ant-design/x';
+import type { ConversationsProps } from '@ant-design/x';
 import type { Agent, Conversation } from '../../../types/api';
 
 const { Text, Paragraph } = Typography;
@@ -49,6 +51,41 @@ export function ConversationSidebar(props: ConversationSidebarProps) {
     onDeleteConversation,
   } = props;
 
+  const conversationItems = conversations.map((conversation) => ({
+    key: conversation.id,
+    label: (
+      <div style={{ display: 'flex', flexDirection: 'column', padding: '4px 0' }}>
+        <Text strong style={{ fontSize: 14 }}>{conversation.title}</Text>
+        <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+          {(conversation.executions ?? []).length} 轮对话 · {formatRelativeTime(conversation.updatedAt)}
+        </Text>
+      </div>
+    ),
+  }));
+
+  const menuForConversation = (item: any): ConversationsProps['menu'] => (event: any) => ({
+    items: [
+      {
+        key: 'rename',
+        label: '重命名',
+        icon: <EditOutlined />,
+      },
+      {
+        key: 'delete',
+        label: '删除',
+        icon: <DeleteOutlined />,
+        danger: true,
+      },
+    ],
+    onClick: (menuInfo) => {
+      if (menuInfo.key === 'rename') {
+        onRenameConversation(item.key);
+      } else if (menuInfo.key === 'delete') {
+        onDeleteConversation(item.key);
+      }
+    },
+  });
+
   return (
     <div className="workspace-left-rail">
       <Card className="console-card hover-card" title="当前智能体">
@@ -85,33 +122,11 @@ export function ConversationSidebar(props: ConversationSidebarProps) {
         {conversations.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有会话，发送第一条消息后会自动创建。" />
         ) : (
-          <List
-            dataSource={conversations}
-            renderItem={(conversation) => (
-              <List.Item className={`conversation-list-item ${selectedConversationId === conversation.id ? 'active' : ''}`}>
-                <button className="conversation-button" onClick={() => onSelectConversation(conversation.id)}>
-                  <div className="conversation-copy">
-                    <Text strong>{conversation.title}</Text>
-                    <Text type="secondary">{(conversation.executions ?? []).length} 轮对话 · {formatRelativeTime(conversation.updatedAt)}</Text>
-                    <Text className="conversation-preview">{getConversationPreview(conversation)}</Text>
-                  </div>
-                </button>
-                <Space size={6}>
-                  <Tooltip title="重命名会话">
-                    <Button type="text" icon={<EditOutlined />} onClick={() => onRenameConversation(conversation.id)} />
-                  </Tooltip>
-                  <Popconfirm
-                    title="确认删除会话？"
-                    description="会同时移除该会话下的执行记录和 Trace。"
-                    okText="删除"
-                    cancelText="取消"
-                    onConfirm={() => onDeleteConversation(conversation.id)}
-                  >
-                    <Button danger type="text" icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                </Space>
-              </List.Item>
-            )}
+          <Conversations
+            activeKey={selectedConversationId}
+            onActiveChange={onSelectConversation}
+            items={conversationItems}
+            menu={menuForConversation as any}
           />
         )}
       </Card>

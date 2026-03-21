@@ -24,8 +24,8 @@ export class SkillService {
   async listAvailable() {
     const builtin = discoverBuiltinSkills();
     const installed = await this.list();
-    const installedKeys = new Set(installed.map((s) => s.skillKey));
-    return builtin.filter((s) => !installedKeys.has(s.skillKey));
+    const installedKeys = new Set(installed.map((s) => `${s.skillKey}@${s.version}`));
+    return builtin.filter((s) => !installedKeys.has(`${s.skillKey}@${s.version}`));
   }
 
   async getById(id: string) {

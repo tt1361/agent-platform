@@ -93,28 +93,52 @@ async function requestEventStream(
 
   const dispatchRawEvent = (rawEvent: string) => {
     const lines = rawEvent.split('\n');
-    let eventName = 'message';
     const dataLines: string[] = [];
 
     for (const line of lines) {
-      if (line.startsWith('event:')) {
-        eventName = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        dataLines.push(line.slice(5).trim());
+      if (line.startsWith('data:')) {
+        const text = line.slice(5).trim();
+        if (text) dataLines.push(text);
       }
     }
 
     if (dataLines.length === 0) return;
 
     const payloadText = dataLines.join('\n');
-    let payload: unknown = payloadText;
+    let payload: any = null;
     try {
       payload = JSON.parse(payloadText);
     } catch {
-      // keep raw text payload
+      // ignore
+      return;
     }
 
-    handlers[eventName]?.(payload);
+    if (!payload || !payload.type) return;
+
+    // Map AG-UI events back to our legacy handlers so the UI doesn't break
+    switch (payload.type) {
+      case 'CUSTOM':
+        if (payload.customEvent === 'run_status') {
+          handlers['status']?.(payload.payload);
+        } else if (payload.customEvent === 'run_retrievals') {
+          handlers['retrievals']?.(payload.payload);
+        } else if (payload.customEvent === 'trace_step') {
+          handlers['trace_step']?.({ step: payload.payload });
+        } else if (payload.customEvent === 'run_completed') {
+          handlers['completed']?.(payload.payload);
+        }
+        break;
+      case 'TEXT_MESSAGE_START':
+        handlers['answer_start']?.(payload);
+        break;
+      case 'TEXT_MESSAGE_CONTENT':
+        handlers['trace_step']?.({ step: { stepType: 'final_answer', content: payload.delta || payload.content } });
+        break;
+      case 'RUN_ERROR':
+        handlers['failed']?.({ error: { message: payload.message } });
+        break;
+      // We mapped reasoning/tools to trace_step via CUSTOM to preserve UI compat for now.
+    }
   };
 
   const processChunk = (chunk: string) => {

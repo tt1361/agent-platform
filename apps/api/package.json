@@ -21,6 +21,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@ag-ui/core": "^0.0.47",
+    "@ag-ui/encoder": "^0.0.47",
     "@agent-platform/database": "workspace:*",
     "@agent-platform/shared": "workspace:*",
     "@langchain/core": "^1.1.34",

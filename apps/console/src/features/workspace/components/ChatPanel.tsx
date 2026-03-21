@@ -4,13 +4,14 @@ import {
   DownOutlined,
   LoadingOutlined,
   PaperClipOutlined,
+  MessageOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Card, Collapse, Dropdown, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Dropdown, Space, Tag, Typography, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { Bubble, Sender, Attachments } from '@ant-design/x';
-import type { BubbleListProps } from '@ant-design/x';
-import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react';
+import { Bubble, Sender, Attachments, ThoughtChain, Prompts, Welcome } from '@ant-design/x';
+import type { BubbleListProps, PromptsProps } from '@ant-design/x';
+import type { ChangeEvent, DragEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../services/api';
 import type { Conversation, KnowledgeRetrievalItem, TraceStep } from '../../../types/api';
@@ -362,19 +363,19 @@ export function ChatPanel({
         key: 'welcome',
         role: 'system',
         content: (
-          <div className="empty-pane">
-            <div className="first-use-panel">
-              <Space direction="vertical" size="large" align="center" style={{ width: '100%' }}>
-                <Text type="secondary">输入第一条消息开始本轮会话。</Text>
-                <Space wrap style={{ justifyContent: 'center' }}>
-                  {suggestedPrompts.map((prompt) => (
-                    <Button key={prompt} onClick={() => handleQuickSubmit(prompt)}>
-                      {prompt}
-                    </Button>
-                  ))}
-                </Space>
-              </Space>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 400 }}>
+            <Welcome
+              icon={<MessageOutlined style={{ fontSize: 32, color: '#1677ff' }} />}
+              title="你好，我是您的智能体助手"
+              description="您可以向我提问，或者尝试以下快速问题开始探索："
+              style={{ marginBottom: 32 }}
+            />
+            <Prompts
+              title="快速开始"
+              items={suggestedPrompts.map(prompt => ({ key: prompt, description: prompt }))}
+              onItemClick={(info) => handleQuickSubmit(info.data.key as string)}
+              styles={{ list: { justifyContent: 'center' } }}
+            />
           </div>
         ),
         variant: 'borderless',
@@ -433,28 +434,13 @@ export function ChatPanel({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
              <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{assistantText}</Typography.Paragraph>
              {executionTraceSteps.length > 0 && (
-               <Collapse
-                 ghost
-                 size="small"
-                 items={[
-                   {
-                     key: 'thinking',
-                     label: <Text type="secondary">思考过程 ({executionTraceSteps.length} 步)</Text>,
-                     children: (
-                       <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                         {executionTraceSteps.map((step, idx) => (
-                           <div key={step.id || idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < executionTraceSteps.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
-                             <Space>
-                               <Tag color={step.stepType === 'thought' ? 'blue' : step.stepType === 'action' ? 'orange' : 'green'}>{traceTypeMap[step.stepType] || step.stepType}</Tag>
-                               <Text type="secondary">步骤 {step.stepIndex}</Text>
-                             </Space>
-                             <Paragraph style={{ marginTop: 4, marginBottom: 0, fontSize: 13 }}>{step.content}</Paragraph>
-                           </div>
-                         ))}
-                       </div>
-                     ),
-                   },
-                 ]}
+               <ThoughtChain
+                 items={executionTraceSteps.map((step, idx) => ({
+                   title: traceTypeMap[step.stepType] || step.stepType,
+                   description: step.content,
+                   status: step.stepType === 'thought' ? 'success' : step.stepType === 'action' ? 'loading' : 'success',
+                   icon: <span style={{ fontSize: 10 }}>{idx + 1}</span>,
+                 }))}
                />
              )}
              {isCurrentExecution && indexedMessageSources.length > 0 && (

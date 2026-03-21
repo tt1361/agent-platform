@@ -77,7 +77,10 @@ export function SkillsPage({ initialSkills = [], initialAvailableSkills = [], in
     message.success('技能已创建');
   }
 
-  const installedSkillKeys = useMemo(() => new Set(skills.map((skill) => skill.skillKey)), [skills]);
+  const installedSkillSignatures = useMemo(
+    () => new Set(skills.map((skill) => `${skill.skillKey}@${skill.version}`)),
+    [skills],
+  );
 
   const filteredInstalledSkills = useMemo(() => {
     return skills.filter((skill) => {
@@ -89,10 +92,14 @@ export function SkillsPage({ initialSkills = [], initialAvailableSkills = [], in
 
   const filteredAvailableSkills = useMemo(() => {
     return availableSkills.filter((skill) => {
-      if (installedSkillKeys.has(skill.skillKey)) return false;
+      if (installedSkillSignatures.has(`${skill.skillKey}@${skill.version}`)) return false;
       return keyword.trim().length === 0 || `${skill.name} ${skill.skillKey}`.toLowerCase().includes(keyword.toLowerCase());
     });
-  }, [availableSkills, installedSkillKeys, keyword]);
+  }, [availableSkills, installedSkillSignatures, keyword]);
+
+  const availableInstalledOverlap = useMemo(() => {
+    return skills.filter((item) => availableSkills.some((plugin) => `${plugin.skillKey}@${plugin.version}` === `${item.skillKey}@${item.version}`)).length;
+  }, [skills, availableSkills]);
 
   const installedColumns: ColumnsType<Skill> = [
     {
@@ -115,7 +122,11 @@ export function SkillsPage({ initialSkills = [], initialAvailableSkills = [], in
           <Button icon={<EyeOutlined />} onClick={() => { if (record.id) { api.getSkill(record.id).then(setDetailSkill); setDetailOpen(true); } }}>查看</Button>
           <Button onClick={() => api.updateSkillStatus(record.id!, 'active').then(() => { message.success('技能已启用'); return refresh(); })}>启用</Button>
           <Button onClick={() => api.updateSkillStatus(record.id!, 'deprecated').then(() => { message.success('技能已弃用'); return refresh(); })}>弃用</Button>
-          <Popconfirm title="确认卸载技能？" description="卸载后将回到可用插件列表中。" onConfirm={() => api.deleteSkill(record.id!).then(() => { message.success('技能已卸载'); return refresh(); })}>
+          <Popconfirm
+            title="确认卸载技能？"
+            description="内置技能卸载后会回到可用插件列表；自定义技能卸载后将被删除。"
+            onConfirm={() => api.deleteSkill(record.id!).then(() => { message.success('技能已卸载'); return refresh(); })}
+          >
             <Button danger icon={<DeleteOutlined />}>卸载</Button>
           </Popconfirm>
         </Space>
@@ -194,8 +205,8 @@ export function SkillsPage({ initialSkills = [], initialAvailableSkills = [], in
         value={activeTab}
         onChange={(value) => setActiveTab(value as 'installed' | 'available')}
         options={[
-          { label: `已安装技能 (${skills.length})`, value: 'installed' },
-          { label: `可用插件 (${Math.max(0, availableSkills.length - skills.filter((item) => availableSkills.some((plugin) => plugin.skillKey === item.skillKey)).length)})`, value: 'available' },
+            { label: `已安装技能 (${skills.length})`, value: 'installed' },
+          { label: `可用插件 (${Math.max(0, availableSkills.length - availableInstalledOverlap)})`, value: 'available' },
         ]}
       />
 

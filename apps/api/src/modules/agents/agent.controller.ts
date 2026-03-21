@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Sse, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Patch, Res } from '@nestjs/common';
 import { AgentService } from './agent.service.js';
-import { Observable, Subject } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Response } from 'express';
+import { EventEncoder } from '@ag-ui/encoder';
+import { Readable } from 'stream';
 
 @Controller('agents')
 export class AgentController {
@@ -83,27 +84,84 @@ export class AgentController {
   }
 
   @Post(':id/run/stream')
-  @Sse()
-  runStream(@Param('id') id: string, @Body() body: any): Observable<MessageEvent> {
+  async runStream(@Param('id') id: string, @Body() body: any, @Res() res: Response) {
     const { input, timeoutMs, conversationId, conversationTitle } = body;
-    const subject = new Subject<MessageEvent>();
     
-    // Fire and forget
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const encoder = new EventEncoder();
+    const writeEvent = (event: any) => {
+      try { res.write(encoder.encodeSSE(event)); } catch {}
+    };
+
     this.agentService.run(id, input, timeoutMs, conversationId, conversationTitle, (event) => {
-      subject.next({ data: event, type: event.type } as any);
+      if (event.type === 'status') {
+        writeEvent({
+          type: 'CUSTOM',
+          customEvent: 'run_status',
+          payload: { traceId: event.traceId, conversationId: event.conversationId },
+        });
+      } else if (event.type === 'retrievals') {
+        writeEvent({
+          type: 'CUSTOM',
+          customEvent: 'run_retrievals',
+          payload: { items: event.items },
+        });
+      } else if (event.type === 'trace_step') {
+        const { step } = event;
+        switch (step.stepType) {
+          case 'thought':
+            writeEvent({ type: 'REASONING_MESSAGE_CONTENT', content: step.content });
+            writeEvent({
+              type: 'CUSTOM',
+              customEvent: 'trace_step',
+              payload: step,
+            });
+            break;
+          case 'action':
+            writeEvent({ type: 'TOOL_CALL_START', toolCallId: step.executionId, toolCallName: step.toolName || 'tool' });
+            writeEvent({ type: 'TOOL_CALL_ARGS', toolCallId: step.executionId, delta: JSON.stringify(step.toolInput || {}) });
+            writeEvent({
+              type: 'CUSTOM',
+              customEvent: 'trace_step',
+              payload: step,
+            });
+            break;
+          case 'observation':
+            writeEvent({ type: 'TOOL_CALL_END', toolCallId: step.executionId });
+            writeEvent({ type: 'TOOL_CALL_RESULT', toolCallId: step.executionId, messageId: step.executionId, content: JSON.stringify(step.toolOutput || {}) });
+            writeEvent({
+              type: 'CUSTOM',
+              customEvent: 'trace_step',
+              payload: step,
+            });
+            break;
+          case 'final_answer':
+            writeEvent({ type: 'TEXT_MESSAGE_CONTENT', messageId: step.executionId, delta: step.content });
+            break;
+        }
+      } else if (event.type === 'failed') {
+        writeEvent({ type: 'RUN_ERROR', message: event.error.message });
+      } else if (event.type === 'answer_start') {
+        writeEvent({ type: 'TEXT_MESSAGE_START', messageId: event.executionId });
+      } else if (event.type === 'completed') {
+        writeEvent({
+          type: 'CUSTOM',
+          customEvent: 'run_completed',
+          payload: { result: event.result },
+        });
+      }
+      
       if (event.type === 'completed' || event.type === 'failed') {
-        subject.complete();
+        try { res.end(); } catch {}
       }
-    }).then(
-      (result) => {
-        // success handled by completed event
-      },
-      (error) => {
-        console.error('Agent run failed:', error);
-      }
-    );
-    
-    return subject.asObservable();
+    }).catch((error) => {
+      console.error('Agent run failed:', error);
+      writeEvent({ type: 'RUN_ERROR', message: error.message });
+      try { res.end(); } catch {}
+    });
   }
 
   @Post(':id/run')

@@ -63,7 +63,46 @@ export class AgentService {
 
   async remove(id: string) {
     await this.getById(id);
-    return prisma.agent.delete({ where: { id } });
+
+    return prisma.$transaction(async (tx) => {
+      await tx.conversationMemorySnapshot.deleteMany({
+        where: {
+          conversation: {
+            agentId: id,
+          },
+        },
+      });
+
+      await tx.executionTrace.deleteMany({
+        where: {
+          execution: {
+            agentId: id,
+          },
+        },
+      });
+
+      await tx.knowledgeRetrievalLog.deleteMany({
+        where: {
+          execution: {
+            agentId: id,
+          },
+        },
+      });
+
+      await tx.execution.deleteMany({
+        where: { agentId: id },
+      });
+
+      await tx.conversation.deleteMany({
+        where: { agentId: id },
+      });
+
+      await tx.agentMemory.deleteMany({
+        where: { agentId: id },
+      });
+
+      return tx.agent.delete({ where: { id } });
+    });
   }
 
   async listExecutions(agentId: string) {
