@@ -1,7 +1,0 @@
-{"timestamp":"04:09:39.092","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.117","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.251","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.254","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection:\" Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.258","source":"Server","level":"ERROR","message":"⨯ \"unhandledRejection: \" Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.825","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}
-{"timestamp":"04:09:39.826","source":"Server","level":"ERROR","message":"Error: ENOENT: no such file or directory, scandir '/Users/tangmingxiang/IdeaProjects/agent-platform/web/src/pages'"}

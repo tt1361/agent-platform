@@ -14,3 +14,8 @@ apps/api/.env
 apps/server-java/target
 apps/server-java/.idea
 uploads
+
+# logs
+*.log
+logs/
+apps/server-java/logs/
