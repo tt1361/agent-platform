@@ -38,9 +38,23 @@ public class SkillController {
         return skillService.updateStatus(id, status);
     }
 
+    @GetMapping("/{id}/secret")
+    public Object getSecret(@PathVariable String id) {
+        return skillService.getSecret(id);
+    }
+
+    @PutMapping("/{id}/secret")
+    public Object updateSecret(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        return skillService.updateSecret(id, body);
+    }
+
+    @DeleteMapping("/{id}/secret")
+    public Object deleteSecret(@PathVariable String id) {
+        return skillService.removeSecret(id);
+    }
+
     @DeleteMapping("/{id}")
     public Object remove(@PathVariable String id) {
         return skillService.remove(id);
     }
 }
-

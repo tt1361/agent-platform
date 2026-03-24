@@ -8,6 +8,7 @@ import com.haoyitec.agent.server.common.util.JsonUtil;
 import com.haoyitec.agent.server.domain.entity.AgentEntity;
 import com.haoyitec.agent.server.domain.entity.AgentMemoryEntity;
 import com.haoyitec.agent.server.domain.entity.ExecutionEntity;
+import com.haoyitec.agent.server.domain.entity.SkillEntity;
 import com.haoyitec.agent.server.domain.mapper.AgentMapper;
 import com.haoyitec.agent.server.domain.mapper.AgentMemoryMapper;
 import com.haoyitec.agent.server.domain.mapper.ConversationMapper;
@@ -15,6 +16,7 @@ import com.haoyitec.agent.server.domain.mapper.ConversationMemorySnapshotMapper;
 import com.haoyitec.agent.server.domain.mapper.ExecutionMapper;
 import com.haoyitec.agent.server.domain.mapper.ExecutionTraceMapper;
 import com.haoyitec.agent.server.domain.mapper.KnowledgeRetrievalLogMapper;
+import com.haoyitec.agent.server.domain.mapper.SkillMapper;
 import com.haoyitec.agent.server.module.conversation.ConversationService;
 import com.haoyitec.agent.server.module.memory.MemoryService;
 import com.haoyitec.agent.server.module.runtime.RuntimeService;
@@ -22,9 +24,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 @Service
@@ -38,6 +44,7 @@ public class AgentService {
     private final AgentMemoryMapper agentMemoryMapper;
     private final ExecutionTraceMapper traceMapper;
     private final KnowledgeRetrievalLogMapper retrievalLogMapper;
+    private final SkillMapper skillMapper;
     private final ConversationService conversationService;
     private final MemoryService memoryService;
     private final RuntimeService runtimeService;
@@ -65,7 +72,9 @@ public class AgentService {
         agent.setSystemPrompt(value(input, "systemPrompt"));
         agent.setMaxSteps(intValue(input.get("maxSteps"), 6));
         agent.setTimeoutMs(intValue(input.get("timeoutMs"), 60000));
-        agent.setSkillIds(JsonUtil.toJson(input.get("skillIds")));
+        List<String> skillIds = normalizeSkillIds(input.get("skillIds"));
+        validateActiveSkillIds(skillIds);
+        agent.setSkillIds(JsonUtil.toJson(skillIds));
 
         if (agent.getName() == null || agent.getLlmProviderId() == null) {
             throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "name 和 llmProviderId 必填");
@@ -86,7 +95,11 @@ public class AgentService {
         if (input.containsKey("systemPrompt")) update.setSystemPrompt(value(input, "systemPrompt"));
         if (input.containsKey("maxSteps")) update.setMaxSteps(intValue(input.get("maxSteps"), existing.getMaxSteps() == null ? 6 : existing.getMaxSteps()));
         if (input.containsKey("timeoutMs")) update.setTimeoutMs(intValue(input.get("timeoutMs"), existing.getTimeoutMs() == null ? 60000 : existing.getTimeoutMs()));
-        if (input.containsKey("skillIds")) update.setSkillIds(JsonUtil.toJson(input.get("skillIds")));
+        if (input.containsKey("skillIds")) {
+            List<String> skillIds = normalizeSkillIds(input.get("skillIds"));
+            validateActiveSkillIds(skillIds);
+            update.setSkillIds(JsonUtil.toJson(skillIds));
+        }
         agentMapper.updateById(update);
         return getById(id);
     }
@@ -189,5 +202,57 @@ public class AgentService {
             return number.intValue();
         }
         return Integer.parseInt(String.valueOf(value));
+    }
+
+    private List<String> normalizeSkillIds(Object raw) {
+        if (raw == null) {
+            return List.of();
+        }
+        if (raw instanceof List<?> list) {
+            List<String> result = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null && StringUtils.hasText(String.valueOf(item))) {
+                    result.add(String.valueOf(item));
+                }
+            }
+            return result;
+        }
+        if (raw instanceof String text) {
+            if (!StringUtils.hasText(text)) {
+                return List.of();
+            }
+            String trimmed = text.trim();
+            if (trimmed.startsWith("[")) {
+                return JsonUtil.toStringList(trimmed);
+            }
+            List<String> result = new ArrayList<>();
+            for (String item : trimmed.split(",")) {
+                if (StringUtils.hasText(item)) {
+                    result.add(item.trim());
+                }
+            }
+            return result;
+        }
+        return List.of();
+    }
+
+    private void validateActiveSkillIds(List<String> skillIds) {
+        if (skillIds == null || skillIds.isEmpty()) {
+            return;
+        }
+        List<SkillEntity> activeSkills = skillMapper.selectList(new LambdaQueryWrapper<SkillEntity>()
+                .in(SkillEntity::getId, skillIds)
+                .eq(SkillEntity::getStatus, "active"));
+        Set<String> activeIds = activeSkills.stream().map(SkillEntity::getId).collect(HashSet::new, HashSet::add, HashSet::addAll);
+        List<String> invalidIds = new ArrayList<>();
+        for (String skillId : skillIds) {
+            if (!activeIds.contains(skillId)) {
+                invalidIds.add(skillId);
+            }
+        }
+        if (!invalidIds.isEmpty()) {
+            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                    "存在不可绑定的技能（不存在或非启用状态）: " + String.join(",", invalidIds));
+        }
     }
 }

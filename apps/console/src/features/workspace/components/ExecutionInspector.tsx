@@ -36,6 +36,30 @@ const memoryTypeMap: Record<string, string> = {
   summary: '总结',
 };
 
+function normalizeSkillIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter((item) => item.trim().length > 0);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => String(item)).filter((item) => item.trim().length > 0);
+        }
+      } catch {
+        return [];
+      }
+    }
+    return trimmed.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  return [];
+}
+
 export function ExecutionInspector({
   agent,
   skills,
@@ -53,8 +77,10 @@ export function ExecutionInspector({
 }: ExecutionInspectorProps) {
   const [memoryFilter, setMemoryFilter] = useState<'all' | 'preference' | 'fact' | 'goal' | 'summary'>('all');
   const [showAllMemories, setShowAllMemories] = useState(false);
-
-  const boundSkills = agent?.skillIds?.length ? skills.filter((skill) => !!skill.id && agent.skillIds?.includes(skill.id) && skill.status === 'active') : [];
+  const boundSkillIds = normalizeSkillIds(agent?.skillIds);
+  const boundSkills = boundSkillIds.length
+    ? skills.filter((skill) => !!skill.id && boundSkillIds.includes(String(skill.id)) && skill.status === 'active')
+    : [];
 
   const traceSteps = traceStepsMap?.[traceId] || [];
 
@@ -89,7 +115,7 @@ export function ExecutionInspector({
             <Descriptions.Item label="状态"><Tag color="blue">{agent.status}</Tag></Descriptions.Item>
             <Descriptions.Item label="最大步数">{agent.maxSteps}</Descriptions.Item>
             <Descriptions.Item label="超时">{agent.timeoutMs} ms</Descriptions.Item>
-            <Descriptions.Item label="已绑技能">{agent.skillIds?.length || 0}</Descriptions.Item>
+            <Descriptions.Item label="已绑技能">{boundSkillIds.length}</Descriptions.Item>
           </Descriptions>
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="左侧选择智能体后，这里会展示运行配置。" />

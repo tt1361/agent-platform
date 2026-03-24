@@ -9,7 +9,7 @@ export interface Agent {
   timeoutMs: number;
   temperature?: number | null;
   topP?: number | null;
-  skillIds?: string[] | null;
+  skillIds?: string[] | string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,8 +27,24 @@ export interface Skill {
   returnsSchema?: Record<string, unknown> | null;
   timeoutMs?: number | null;
   retryPolicy?: Record<string, unknown> | null;
+  sourceType?: string | null;
+  sourcePath?: string | null;
+  whenToUse?: string[] | string | null;
+  whenNotToUse?: string[] | string | null;
+  pluginType?: string | null;
+  pluginTriggerKeywords?: string[] | null;
+  pluginSecretKeys?: string[] | null;
+  secretConfigured?: boolean;
+  secretMasked?: Record<string, string> | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface SkillSecret {
+  skillId: string;
+  configured: boolean;
+  masked?: Record<string, string> | null;
+  updatedAt?: string | null;
 }
 
 export interface LlmProvider {

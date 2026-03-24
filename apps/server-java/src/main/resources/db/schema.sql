@@ -37,6 +37,15 @@ CREATE TABLE IF NOT EXISTS skills (
   INDEX idx_skills_status(status)
 );
 
+CREATE TABLE IF NOT EXISTS skill_plugin_secrets (
+  skill_id VARCHAR(36) PRIMARY KEY,
+  secret_ciphertext TEXT NOT NULL,
+  secret_masked JSON,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_skill_plugin_secrets_skill FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS agents (
   id VARCHAR(36) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,

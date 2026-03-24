@@ -8,6 +8,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @TableName("skills")
@@ -26,6 +28,25 @@ public class SkillEntity {
     private String tags;
     private Integer timeoutMs;
     private String retryPolicy;
+
+    @TableField(exist = false)
+    private String sourceType;
+    @TableField(exist = false)
+    private String sourcePath;
+    @TableField(exist = false)
+    private List<String> whenToUse;
+    @TableField(exist = false)
+    private List<String> whenNotToUse;
+    @TableField(exist = false)
+    private String pluginType;
+    @TableField(exist = false)
+    private List<String> pluginTriggerKeywords;
+    @TableField(exist = false)
+    private List<String> pluginSecretKeys;
+    @TableField(exist = false)
+    private Boolean secretConfigured;
+    @TableField(exist = false)
+    private Map<String, String> secretMasked;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

@@ -12,6 +12,7 @@ import type {
   ProviderTestResult,
   RunAgentResult,
   Skill,
+  SkillSecret,
   TraceStep,
 } from '../types/api';
 import { buildApiUrl } from './http';
@@ -215,6 +216,10 @@ export const api = {
     request<Skill>('/api/v1/skills', { method: 'POST', body: JSON.stringify(payload) }),
   updateSkillStatus: (skillId: string, status: 'active' | 'deprecated' | 'disabled') =>
     request<Skill>(`/api/v1/skills/${skillId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  getSkillSecret: (skillId: string) => request<SkillSecret>(`/api/v1/skills/${skillId}/secret`),
+  updateSkillSecret: (skillId: string, secrets: Record<string, string>) =>
+    request<SkillSecret>(`/api/v1/skills/${skillId}/secret`, { method: 'PUT', body: JSON.stringify({ secrets }) }),
+  deleteSkillSecret: (skillId: string) => request<SkillSecret>(`/api/v1/skills/${skillId}/secret`, { method: 'DELETE' }),
   deleteSkill: (skillId: string) => request<Skill>(`/api/v1/skills/${skillId}`, { method: 'DELETE' }),
   listProviders: () => request<LlmProvider[]>('/api/v1/llm-providers'),
   testProvider: (providerId: string) => request<ProviderTestResult>(`/api/v1/llm-providers/${providerId}/test`, { method: 'POST' }),

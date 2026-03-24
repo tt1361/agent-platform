@@ -3,8 +3,6 @@ package com.haoyitec.agent.server.module.skill;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.haoyitec.agent.server.common.exception.BizException;
-import com.haoyitec.agent.server.common.util.IdUtil;
-import com.haoyitec.agent.server.common.util.JsonUtil;
 import com.haoyitec.agent.server.domain.entity.SkillEntity;
 import com.haoyitec.agent.server.domain.mapper.SkillMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,20 +19,29 @@ import java.util.stream.Collectors;
 public class SkillService {
 
     private final SkillMapper skillMapper;
-    private final BuiltinSkillRegistry builtinSkillRegistry;
+    private final ResourceSkillRegistry resourceSkillRegistry;
+    private final SkillPluginSecretService skillPluginSecretService;
 
     public List<SkillEntity> list() {
-        return skillMapper.selectList(new LambdaQueryWrapper<SkillEntity>()
+        List<SkillEntity> skills = skillMapper.selectList(new LambdaQueryWrapper<SkillEntity>()
                 .orderByDesc(SkillEntity::getUpdatedAt));
+        Map<String, SkillSecretView> secretViewMap = skillPluginSecretService.batchSecretViews(
+                skills.stream().map(SkillEntity::getId).collect(Collectors.toList()));
+        return skills
+                .stream()
+                .map(skill -> decorateSkill(skill, secretViewMap.get(skill.getId())))
+                .toList();
     }
 
-    public List<BuiltinSkill> listAvailable() {
-        List<SkillEntity> installed = list();
-        Set<String> keys = installed.stream()
+    public List<SkillEntity> listAvailable() {
+        Set<String> syncedKeys = skillMapper.selectList(new LambdaQueryWrapper<SkillEntity>())
+                .stream()
                 .map(item -> item.getSkillKey() + "@" + item.getVersion())
                 .collect(Collectors.toSet());
-        return builtinSkillRegistry.list().stream()
-                .filter(item -> !keys.contains(item.skillKey() + "@" + item.version()))
+
+        return resourceSkillRegistry.list().stream()
+                .filter(item -> !syncedKeys.contains(item.signature()))
+                .map(this::fromResourceDefinition)
                 .toList();
     }
 
@@ -43,65 +50,12 @@ public class SkillService {
         if (entity == null) {
             throw new BizException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Skill not found");
         }
-        return entity;
+        return decorateSkill(entity, skillPluginSecretService.getSecretView(id));
     }
 
     public SkillEntity create(Map<String, Object> input) {
-        String skillKey = asString(input, "skillKey");
-        String version = asString(input, "version");
-        if (skillKey == null || version == null) {
-            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "skillKey 和 version 必填");
-        }
-
-        BuiltinSkill builtin = builtinSkillRegistry.list().stream()
-                .filter(item -> item.skillKey().equals(skillKey) && item.version().equals(version))
-                .findFirst()
-                .orElse(null);
-
-        if (builtin != null) {
-            SkillEntity entity = findByKeyAndVersion(skillKey, version);
-            if (entity == null) {
-                entity = new SkillEntity();
-                entity.setId(IdUtil.uuid());
-                entity.setSkillKey(skillKey);
-                entity.setVersion(version);
-            }
-            entity.setName(builtin.name());
-            entity.setDescription(builtin.description());
-            entity.setExecutorKey(builtin.executorKey());
-            entity.setStatus("active");
-            entity.setParametersSchema(JsonUtil.toJson(builtin.parametersSchema()));
-            entity.setReturnsSchema(JsonUtil.toJson(builtin.returnsSchema()));
-            entity.setTags(JsonUtil.toJson(builtin.tags()));
-            upsert(entity);
-            return entity;
-        }
-
-        String name = asString(input, "name");
-        String executorKey = asString(input, "executorKey");
-        Object parametersSchema = input.get("parametersSchema");
-        Object returnsSchema = input.get("returnsSchema");
-        if (name == null || executorKey == null || parametersSchema == null || returnsSchema == null) {
-            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "创建自定义技能需提供 name/executorKey/parametersSchema/returnsSchema");
-        }
-
-        SkillEntity entity = findByKeyAndVersion(skillKey, version);
-        if (entity == null) {
-            entity = new SkillEntity();
-            entity.setId(IdUtil.uuid());
-            entity.setSkillKey(skillKey);
-            entity.setVersion(version);
-        }
-        entity.setName(name);
-        entity.setDescription(asString(input, "description"));
-        entity.setExecutorKey(executorKey);
-        entity.setStatus(asString(input, "status") == null ? "active" : asString(input, "status"));
-        entity.setParametersSchema(JsonUtil.toJson(parametersSchema));
-        entity.setReturnsSchema(JsonUtil.toJson(returnsSchema));
-        entity.setTags(JsonUtil.toJson(input.get("tags")));
-        entity.setTimeoutMs(asInteger(input.get("timeoutMs")));
-        upsert(entity);
-        return entity;
+        throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                "技能定义为只读，请通过 apps/server-java/src/main/resources/skills 目录新增技能");
     }
 
     public SkillEntity updateStatus(String id, String status) {
@@ -119,34 +73,72 @@ public class SkillService {
         return entity;
     }
 
-    private SkillEntity findByKeyAndVersion(String skillKey, String version) {
-        return skillMapper.selectOne(new LambdaQueryWrapper<SkillEntity>()
-                .eq(SkillEntity::getSkillKey, skillKey)
-                .eq(SkillEntity::getVersion, version)
-                .last("LIMIT 1"));
+    public SkillSecretView getSecret(String id) {
+        return skillPluginSecretService.getSecretView(id);
     }
 
-    private void upsert(SkillEntity entity) {
-        SkillEntity existing = skillMapper.selectById(entity.getId());
-        if (existing == null) {
-            skillMapper.insert(entity);
+    public SkillSecretView updateSecret(String id, Map<String, Object> body) {
+        return skillPluginSecretService.upsertSecret(id, body);
+    }
+
+    public SkillSecretView removeSecret(String id) {
+        return skillPluginSecretService.clearSecret(id);
+    }
+
+    private SkillEntity decorateSkill(SkillEntity entity, SkillSecretView secretView) {
+        resourceSkillRegistry.find(entity.getSkillKey(), entity.getVersion())
+                .ifPresentOrElse(definition -> {
+                    entity.setSourceType("resource-md");
+                    entity.setSourcePath(definition.sourcePath());
+                    entity.setWhenToUse(definition.whenToUse());
+                    entity.setWhenNotToUse(definition.whenNotToUse());
+                    if (definition.plugin() != null) {
+                        entity.setPluginType(definition.plugin().type());
+                        entity.setPluginTriggerKeywords(definition.plugin().triggerKeywords());
+                        entity.setPluginSecretKeys(definition.plugin().secretKeys());
+                    } else {
+                        entity.setPluginType(null);
+                        entity.setPluginTriggerKeywords(List.of());
+                        entity.setPluginSecretKeys(List.of());
+                    }
+                }, () -> {
+                    entity.setSourceType("database-legacy");
+                    entity.setSourcePath(null);
+                    entity.setWhenToUse(List.of());
+                    entity.setWhenNotToUse(List.of());
+                    entity.setPluginType(null);
+                    entity.setPluginTriggerKeywords(List.of());
+                    entity.setPluginSecretKeys(List.of());
+                });
+        if (secretView != null) {
+            entity.setSecretConfigured(secretView.configured());
+            entity.setSecretMasked(secretView.masked());
         } else {
-            skillMapper.updateById(entity);
+            entity.setSecretConfigured(false);
+            entity.setSecretMasked(Map.of());
         }
+        return entity;
     }
 
-    private String asString(Map<String, Object> input, String key) {
-        Object value = input.get(key);
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private Integer asInteger(Object value) {
-        if (value == null) {
-            return null;
+    private SkillEntity fromResourceDefinition(ResourceSkillDefinition definition) {
+        SkillEntity entity = new SkillEntity();
+        entity.setSkillKey(definition.skillKey());
+        entity.setName(definition.name());
+        entity.setVersion(definition.version());
+        entity.setDescription(definition.description());
+        entity.setStatus(definition.status());
+        entity.setExecutorKey(definition.executorKey());
+        entity.setSourceType("resource-md");
+        entity.setSourcePath(definition.sourcePath());
+        entity.setWhenToUse(definition.whenToUse());
+        entity.setWhenNotToUse(definition.whenNotToUse());
+        if (definition.plugin() != null) {
+            entity.setPluginType(definition.plugin().type());
+            entity.setPluginTriggerKeywords(definition.plugin().triggerKeywords());
+            entity.setPluginSecretKeys(definition.plugin().secretKeys());
         }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        return Integer.parseInt(String.valueOf(value));
+        entity.setSecretConfigured(false);
+        entity.setSecretMasked(Map.of());
+        return entity;
     }
 }

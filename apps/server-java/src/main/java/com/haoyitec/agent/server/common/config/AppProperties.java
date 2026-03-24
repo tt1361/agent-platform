@@ -10,6 +10,7 @@ public class AppProperties {
     private Cors cors = new Cors();
     private Upload upload = new Upload();
     private Rag rag = new Rag();
+    private Platform platform = new Platform();
 
     @Data
     public static class Cors {
@@ -31,5 +32,10 @@ public class AppProperties {
         private Integer chunkSize = 512;
         private Integer chunkOverlap = 50;
         private Integer topK = 5;
+    }
+
+    @Data
+    public static class Platform {
+        private String secretKey = "haoyitec-platform-secret-key-32bytes";
     }
 }

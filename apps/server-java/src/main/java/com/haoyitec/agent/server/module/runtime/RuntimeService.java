@@ -4,19 +4,23 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.haoyitec.agent.server.common.exception.BizException;
 import com.haoyitec.agent.server.common.util.IdUtil;
+import com.haoyitec.agent.server.common.util.JsonUtil;
 import com.haoyitec.agent.server.domain.entity.AgentEntity;
 import com.haoyitec.agent.server.domain.entity.ConversationEntity;
 import com.haoyitec.agent.server.domain.entity.ExecutionEntity;
 import com.haoyitec.agent.server.domain.entity.ExecutionTraceEntity;
+import com.haoyitec.agent.server.domain.entity.SkillEntity;
 import com.haoyitec.agent.server.domain.mapper.AgentMapper;
 import com.haoyitec.agent.server.domain.mapper.ConversationMapper;
 import com.haoyitec.agent.server.domain.mapper.ExecutionMapper;
 import com.haoyitec.agent.server.domain.mapper.ExecutionTraceMapper;
+import com.haoyitec.agent.server.domain.mapper.SkillMapper;
 import com.haoyitec.agent.server.infra.ai.AiChatService;
 import com.haoyitec.agent.server.module.conversation.ConversationService;
 import com.haoyitec.agent.server.module.knowledge.KnowledgeRetrievalItem;
 import com.haoyitec.agent.server.module.knowledge.KnowledgeRetrievalService;
 import com.haoyitec.agent.server.module.memory.MemoryService;
+import com.haoyitec.agent.server.module.runtime.plugin.PluginSkillExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,9 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 @Service
@@ -37,10 +43,12 @@ public class RuntimeService {
     private final ConversationMapper conversationMapper;
     private final ExecutionMapper executionMapper;
     private final ExecutionTraceMapper executionTraceMapper;
+    private final SkillMapper skillMapper;
     private final ConversationService conversationService;
     private final KnowledgeRetrievalService retrievalService;
     private final MemoryService memoryService;
     private final AiChatService aiChatService;
+    private final PluginSkillExecutionService pluginSkillExecutionService;
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> run(String agentId,
@@ -88,6 +96,8 @@ public class RuntimeService {
         }
 
         try {
+            List<SkillEntity> boundSkills = listBoundActiveSkills(agent.getSkillIds());
+            int stepIndex = 0;
             List<KnowledgeRetrievalItem> retrievals = retrievalService.retrieve(input, 8, execution.getId());
             if (!retrievals.isEmpty()) {
                 String retrievalSummary = retrievals.stream()
@@ -95,7 +105,7 @@ public class RuntimeService {
                                 (item.content().length() > 80 ? item.content().substring(0, 80) : item.content()))
                         .reduce((a, b) -> a + "；" + b)
                         .orElse("");
-                Map<String, Object> retrievalStep = recordTraceStep(execution.getId(), traceId, 0, "observation",
+                Map<String, Object> retrievalStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "observation",
                         "知识检索命中 " + retrievals.size() + " 条：" + retrievalSummary, null, null, null);
                 emit(eventConsumer, Map.of("type", "trace_step", "step", retrievalStep));
                 emit(eventConsumer, Map.of(
@@ -106,19 +116,62 @@ public class RuntimeService {
                 ));
             }
 
+            // 先尝试执行已绑定且启用的技能插件，结果会写入 trace 便于前端展示与排障。
+            Optional<SkillToolResult> skillToolResult = tryExecuteBoundSkill(input, boundSkills, timeoutMs);
+            if (skillToolResult.isPresent()) {
+                SkillToolResult toolResult = skillToolResult.get();
+                Map<String, Object> actionStep = recordTraceStep(
+                        execution.getId(),
+                        traceId,
+                        stepIndex++,
+                        "action",
+                        "调用技能 " + toolResult.toolName(),
+                        toolResult.toolName(),
+                        toolResult.toolInput(),
+                        null
+                );
+                emit(eventConsumer, Map.of("type", "trace_step", "step", actionStep));
+
+                String observationContent = toolResult.toolOutput().get("error") == null
+                        ? "技能执行成功：" + String.valueOf(toolResult.toolOutput().get("summary"))
+                        : "技能执行失败：" + String.valueOf(toolResult.toolOutput().get("error"));
+                Map<String, Object> observationStep = recordTraceStep(
+                        execution.getId(),
+                        traceId,
+                        stepIndex++,
+                        "observation",
+                        observationContent,
+                        toolResult.toolName(),
+                        toolResult.toolInput(),
+                        toolResult.toolOutput()
+                );
+                emit(eventConsumer, Map.of("type", "trace_step", "step", observationStep));
+            }
+
             emit(eventConsumer, Map.of("type", "answer_start", "executionId", execution.getId(), "traceId", traceId));
 
-            String systemPrompt = StringUtils.hasText(agent.getSystemPrompt())
-                    ? agent.getSystemPrompt()
-                    : "你是一名乐于助人的中文智能体。";
-            String enhancedPrompt = buildPrompt(input, retrievals, activeConversation.getId(), agent.getId());
-            String answer = aiChatService.chat(systemPrompt, enhancedPrompt);
+            String answer;
+            String thoughtContent;
+            // 若插件已返回结构化结果，优先“基于插件结果直出”，防止模型二次发挥导致内容编造。
+            String groundedSkillAnswer = tryBuildGroundedSkillAnswer(skillToolResult);
+            if (StringUtils.hasText(groundedSkillAnswer)) {
+                answer = groundedSkillAnswer;
+                thoughtContent = "已基于插件实时返回结果生成答案（未进行模型补全）";
+            } else {
+                String systemPrompt = StringUtils.hasText(agent.getSystemPrompt())
+                        ? agent.getSystemPrompt()
+                        : "你是一名乐于助人的中文智能体。";
+                String enhancedPrompt = buildPrompt(input, retrievals, activeConversation.getId(), agent.getId(),
+                        skillToolResult.map(SkillToolResult::promptContext).orElse(null));
+                answer = aiChatService.chat(systemPrompt, enhancedPrompt);
+                thoughtContent = "模型已完成思考并开始生成答案";
+            }
 
-            Map<String, Object> thoughtStep = recordTraceStep(execution.getId(), traceId, 1, "thought", "模型已完成思考并开始生成答案",
+            Map<String, Object> thoughtStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "thought", thoughtContent,
                     null, null, null);
             emit(eventConsumer, Map.of("type", "trace_step", "step", thoughtStep));
 
-            Map<String, Object> finalStep = recordTraceStep(execution.getId(), traceId, 2, "final_answer", answer, null, null, null);
+            Map<String, Object> finalStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "final_answer", answer, null, null, null);
             emit(eventConsumer, Map.of("type", "trace_step", "step", finalStep));
 
             LocalDateTime endedAt = LocalDateTime.now();
@@ -126,7 +179,7 @@ public class RuntimeService {
                     .eq(ExecutionEntity::getId, execution.getId())
                     .set(ExecutionEntity::getStatus, "succeeded")
                     .set(ExecutionEntity::getOutputText, answer)
-                    .set(ExecutionEntity::getStepCount, 2)
+                    .set(ExecutionEntity::getStepCount, stepIndex)
                     .set(ExecutionEntity::getTokensUsed, Math.max(answer.length() / 2, 1))
                     .set(ExecutionEntity::getStartedAt, startedAt)
                     .set(ExecutionEntity::getEndedAt, endedAt)
@@ -151,7 +204,7 @@ public class RuntimeService {
             result.put("conversationId", activeConversation.getId());
             result.put("status", "succeeded");
             result.put("output", answer);
-            result.put("stepCount", 2);
+            result.put("stepCount", stepIndex);
             result.put("tokensUsed", Math.max(answer.length() / 2, 1));
             result.put("memoryUpdate", Map.of(
                     "shortTermMemory", shortTermMemory,
@@ -226,8 +279,8 @@ public class RuntimeService {
         step.setStepType(stepType);
         step.setContent(content == null ? "" : content);
         step.setToolName(toolName);
-        step.setToolInput(toolInput == null ? null : String.valueOf(toolInput));
-        step.setToolOutput(toolOutput == null ? null : String.valueOf(toolOutput));
+        step.setToolInput(toolInput == null ? null : JsonUtil.toJson(toolInput));
+        step.setToolOutput(toolOutput == null ? null : JsonUtil.toJson(toolOutput));
         executionTraceMapper.insert(step);
         Map<String, Object> payload = new HashMap<>();
         payload.put("executionId", executionId);
@@ -254,10 +307,151 @@ public class RuntimeService {
         return count == null ? 0 : count.intValue();
     }
 
+    private List<SkillEntity> listBoundActiveSkills(String skillIdsJson) {
+        List<String> skillIds = JsonUtil.toStringList(skillIdsJson);
+        if (skillIds.isEmpty()) {
+            return List.of();
+        }
+        List<SkillEntity> queriedSkills = skillMapper.selectList(new LambdaQueryWrapper<SkillEntity>()
+                .in(SkillEntity::getId, skillIds)
+                .eq(SkillEntity::getStatus, "active"));
+        Map<String, SkillEntity> skillMap = new HashMap<>();
+        for (SkillEntity skill : queriedSkills) {
+            skillMap.put(skill.getId(), skill);
+        }
+        return skillIds.stream()
+                .map(skillMap::get)
+                .filter(item -> item != null)
+                .toList();
+    }
+
+    private Optional<SkillToolResult> tryExecuteBoundSkill(String input,
+                                                           List<SkillEntity> boundSkills,
+                                                           Integer timeoutMs) {
+        if (boundSkills == null || boundSkills.isEmpty()) {
+            return Optional.empty();
+        }
+        return pluginSkillExecutionService.tryExecute(input, boundSkills, timeoutMs)
+                .map(result -> new SkillToolResult(
+                        result.toolName(),
+                        result.toolInput(),
+                        result.toolOutput(),
+                        result.promptContext()
+                ));
+    }
+
+    /**
+     * 根据插件输出构建“可直接返回给用户”的答案：
+     * 1. 有 error：直接反馈插件失败原因；
+     * 2. 有 items：逐条拼接标题/摘要/链接；
+     * 3. 无可用条目：明确提示未检索到结果。
+     */
+    private String tryBuildGroundedSkillAnswer(Optional<SkillToolResult> skillToolResult) {
+        if (skillToolResult == null || skillToolResult.isEmpty()) {
+            return null;
+        }
+        SkillToolResult result = skillToolResult.get();
+        if (result.toolOutput() == null || result.toolOutput().isEmpty()) {
+            return null;
+        }
+
+        String toolName = StringUtils.hasText(result.toolName()) ? result.toolName() : "plugin";
+        Object error = result.toolOutput().get("error");
+        if (error != null && StringUtils.hasText(String.valueOf(error))) {
+            return "已触发技能「" + toolName + "」，但调用失败："
+                    + sanitizeLine(String.valueOf(error))
+                    + "。请稍后重试或检查插件配置。";
+        }
+
+        List<Map<String, String>> items = normalizeResultItems(result.toolOutput().get("items"));
+        if (items.isEmpty()) {
+            String summary = sanitizeLine(asText(result.toolOutput().get("summary")));
+            if (StringUtils.hasText(summary)) {
+                return "已触发技能「" + toolName + "」，但未检索到可用条目。\n返回摘要："
+                        + truncate(summary, 220)
+                        + "\n注：仅基于插件返回，不进行编造补全。";
+            }
+            return "已触发技能「" + toolName + "」，但插件未返回可用条目。";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("以下内容来自技能「").append(toolName).append("」实时返回：\n");
+        int displayIndex = 1;
+        for (Map<String, String> item : items) {
+            if (displayIndex > 10) {
+                break;
+            }
+            String title = sanitizeLine(item.get("title"));
+            String snippet = sanitizeLine(item.get("snippet"));
+            String url = sanitizeLine(item.get("url"));
+
+            if (!StringUtils.hasText(title) && !StringUtils.hasText(snippet) && !StringUtils.hasText(url)) {
+                continue;
+            }
+            builder.append(displayIndex++).append(". ");
+            builder.append(StringUtils.hasText(title) ? title : "-");
+            if (StringUtils.hasText(snippet) && !"-".equals(snippet)) {
+                builder.append("：").append(snippet);
+            }
+            if (StringUtils.hasText(url)) {
+                builder.append("\n链接：").append(url);
+            }
+            builder.append("\n");
+        }
+        if (displayIndex == 1) {
+            return "已触发技能「" + toolName + "」，但插件未返回可用条目。";
+        }
+        builder.append("注：仅展示插件真实返回结果，未做编造补全。");
+        return builder.toString().trim();
+    }
+
+    private List<Map<String, String>> normalizeResultItems(Object items) {
+        if (!(items instanceof List<?> rawItems)) {
+            return List.of();
+        }
+        List<Map<String, String>> normalized = new ArrayList<>();
+        for (Object rawItem : rawItems) {
+            if (!(rawItem instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Map<String, String> item = new HashMap<>();
+            item.put("title", asText(map.get("title")));
+            item.put("snippet", asText(map.get("snippet")));
+            item.put("url", asText(map.get("url")));
+            normalized.add(item);
+        }
+        return normalized;
+    }
+
+    private String asText(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof String text) {
+            return text.trim();
+        }
+        return String.valueOf(value);
+    }
+
+    private String sanitizeLine(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        return value.replace("\r", " ").replace("\n", " ").trim();
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (!StringUtils.hasText(text) || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
+    }
+
     private String buildPrompt(String input,
                                List<KnowledgeRetrievalItem> retrievals,
                                String conversationId,
-                               String agentId) {
+                               String agentId,
+                               String skillContext) {
         StringBuilder builder = new StringBuilder();
         builder.append("当前用户问题：").append(input).append("\n\n");
 
@@ -289,7 +483,21 @@ public class RuntimeService {
             builder.append("\n请优先基于以上资料回答。\n");
         }
 
+        if (StringUtils.hasText(skillContext)) {
+            builder.append("\n技能执行结果：\n")
+                    .append("- ")
+                    .append(skillContext)
+                    .append("\n");
+            builder.append("请在回答中优先使用技能执行结果。\n");
+        }
+
         builder.append("请使用中文输出简洁明确的回答。\n");
         return builder.toString();
+    }
+
+    private record SkillToolResult(String toolName,
+                                   Map<String, Object> toolInput,
+                                   Map<String, Object> toolOutput,
+                                   String promptContext) {
     }
 }

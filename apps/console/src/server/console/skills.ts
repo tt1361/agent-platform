@@ -16,7 +16,7 @@ export async function getSkillsPageData(): Promise<SkillsPageData> {
     return {
       skills: installedItems,
       availableSkills: discoveredItems,
-      messageText: `已安装 ${installedItems.length} 个技能，发现 ${discoveredItems.length} 个可用插件`,
+      messageText: `已同步 ${installedItems.length} 个目录技能，待同步 ${discoveredItems.length} 个`,
     };
   } catch (error) {
     return {
