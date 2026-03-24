@@ -1,3 +1,4 @@
+// @ts-ignore
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';

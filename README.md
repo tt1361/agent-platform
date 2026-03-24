@@ -2,55 +2,41 @@
 
 一个本地可运行的智能体平台 MVP，包含：
 
-- `Express + TypeScript` 后端
+- `Spring Boot 3 + JDK 17` 后端（`apps/server-java`）
 - `React + Vite + Ant Design` 前端控制台
-- `MySQL + Prisma` 数据持久化
-- `MiniMax` 模型接入
+- `MySQL + MyBatis-Plus` 数据持久化
+- `Spring AI Alibaba (DashScope)` 模型接入
 - 会话上下文、短期记忆、长期记忆、Trace 可视化
 
 ## 一、快速启动
 
-1. 复制环境变量模板：
+1. 准备 MySQL：
 
-```bash
-cp .env.example .env
-cp .env.example server/.env
+```sql
+CREATE DATABASE IF NOT EXISTS agent_platform DEFAULT CHARACTER SET utf8mb4;
 ```
 
-2. 根据本地环境修改 `.env` 和 `server/.env`，至少确保：
-
-- `DATABASE_URL`
-- `MINIMAX_API_KEY`
-- `MINIMAX_BASE_URL`
-- `MINIMAX_MODEL`
-
-3. 安装依赖：
+2. 安装前端依赖：
 
 ```bash
 npm install
 ```
 
-4. 初始化数据库结构：
+3. 启动 Java 服务端：
 
 ```bash
-npm run db:push --workspace server
+npm run dev:server-java
 ```
 
-5. 初始化默认 Provider 和示例 Skill：
+4. 启动前端控制台：
 
 ```bash
-npm run db:seed --workspace server
-```
-
-6. 启动前后端：
-
-```bash
-npm run dev
+npm run dev:console
 ```
 
 ## 二、访问地址
 
-- API：`http://localhost:3000`
+- API：`http://localhost:8888`
 - Web：`http://localhost:5173`
 
 如果 `5173` 被占用，Vite 会自动切换到其他端口，请以终端输出为准。
@@ -136,29 +122,14 @@ npm run db:seed --workspace server
 ## 五、常用命令
 
 ```bash
-# 启动前后端
-npm run dev
-
-# 单独启动后端
-npm run dev:server
-
-# 单独启动前端
-npm run dev:web
-
-# 推送数据库结构
-npm run db:push --workspace server
-
-# 重新生成 Prisma Client
-npm run db:generate --workspace server
-
-# 写入默认种子数据
-npm run db:seed --workspace server
-
-# 构建后端
-npm run build --workspace server
+# 启动 Java 后端
+npm run dev:server-java
 
 # 构建前端
-npm run build --workspace web
+npm run build:console
+
+# 构建 Java 后端
+npm run build:server-java
 ```
 
 ## 六、已知限制

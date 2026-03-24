@@ -1,4 +1,4 @@
-const apiBaseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1:3000/api/v1';
+const apiBaseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1:8888/api/v1';
 const consoleBaseUrl = process.env.CONSOLE_BASE_URL ?? 'http://127.0.0.1:5173';
 const runLlm = (process.env.CHECKLIST_RUN_LLM ?? '1') !== '0';
 

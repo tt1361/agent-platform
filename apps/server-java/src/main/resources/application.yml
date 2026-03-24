@@ -1,0 +1,179 @@
+# =====================================================
+# Haoyitec Agent Platform - Main Configuration
+# =====================================================
+
+server:
+  port: 8888
+
+spring:
+  application:
+    name: agent-platform
+
+  profiles:
+    active: dev
+
+  # ============ AI Configuration ============
+  ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:sk-9947e354090c40ebaf5bfbf0a2f66139}
+      chat:
+        options:
+          model: qwen-max
+      embedding:
+        options:
+          model: text-embedding-v2
+
+  # ============ Database Configuration ============
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/agent_platform?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:135323}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+
+  # ============ Elasticsearch Configuration ============
+  elasticsearch:
+    uris: ${ES_URL:http://localhost:9201}
+    username: ${ES_USERNAME:}
+    password: ${ES_PASSWORD:}
+
+  # ============ Redis Configuration ============
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 5000ms
+
+  # ============ Cache Configuration ============
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000  # 1 hour
+      cache-null-values: false
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# =====================================================
+# Nacos Configuration
+# =====================================================
+
+nacos:
+  discovery:
+    server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+    namespace: ${NACOS_NAMESPACE:}
+    username: ${NACOS_USERNAME:nacos}
+    password: ${NACOS_PASSWORD:nacos}
+  config:
+    server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+    namespace: ${NACOS_NAMESPACE:}
+    username: ${NACOS_USERNAME:nacos}
+    password: ${NACOS_PASSWORD:nacos}
+    file-extension: yaml
+
+# =====================================================
+# MyBatis-Plus Configuration
+# =====================================================
+mybatis-plus:
+  global-config:
+    enable-sql-runner: true
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# =====================================================
+# Custom Configuration
+# =====================================================
+app:
+  # JWT Configuration
+  jwt:
+    secret: ${JWT_SECRET:haoyitec-agent-platform-secret-key-change-in-production-2024}
+    expiration: ${JWT_EXPIRATION:86400000}  # 24 hours
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}  # 7 days
+
+  platform:
+    secret-key: ${PLATFORM_SECRET_KEY:haoyitec-platform-secret-key-32bytes}
+
+  # CORS Configuration
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+    allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+    allowed-headers: "*"
+    max-age: 3600
+
+  # File Upload Configuration
+  upload:
+    max-file-size: 50MB
+    path: ${UPLOAD_PATH:./uploads}
+
+  # RAG Configuration
+  rag:
+    vector-store-index: agent_vectors
+    chunk-size: 512
+    chunk-overlap: 50
+    top-k: 5
+
+  # Quota & rate limit
+  quota:
+    requests-per-minute: 60
+    tokens-per-day: 50000
+
+# =====================================================
+# Logging Configuration
+# =====================================================
+logging:
+  level:
+    root: INFO
+    com.haoyitec.agent.server: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.security: INFO
+    co.elastic.clients: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/agent-platform.log
+
+# =====================================================
+# Actuator Configuration
+# =====================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+  info:
+    env:
+      enabled: true
+
+# =====================================================
+# OpenAPI Configuration
+# =====================================================
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    persist-authorization: true
+  default-produces-media-type: application/json

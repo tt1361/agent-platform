@@ -11,3 +11,6 @@ apps/console/.next
 apps/console/tsconfig.tsbuildinfo
 apps/api/uploads
 apps/api/.env
+apps/server-java/target
+apps/server-java/.idea
+uploads

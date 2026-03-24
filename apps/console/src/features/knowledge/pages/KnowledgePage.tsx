@@ -99,8 +99,7 @@ export function KnowledgePage({ initialBases = [], initialDocuments = [], initia
 
   async function handleDownload(document: KnowledgeDocument) {
     const result = await api.getKnowledgeDocumentDownload(document.id);
-    const backendOrigin = `${window.location.protocol}//${window.location.hostname}:3000`;
-    const targetUrl = result.url.startsWith('http') ? result.url : `${backendOrigin}${result.url}`;
+    const targetUrl = result.url.startsWith('http') ? result.url : `${window.location.origin}${result.url}`;
     if ((document.mimeType || '').includes('pdf') || (document.fileName || '').toLowerCase().endsWith('.pdf')) {
       window.open(targetUrl, '_blank', 'noopener');
       return;

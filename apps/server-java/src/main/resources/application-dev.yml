@@ -1,0 +1,15 @@
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+  sql:
+    init:
+      mode: never
+
+management:
+  endpoint:
+    health:
+      show-details: always

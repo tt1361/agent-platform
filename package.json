@@ -3,8 +3,10 @@
   "private": true,
   "scripts": {
     "dev:api": "pnpm --filter api run dev",
+    "dev:server-java": "cd apps/server-java && mvn spring-boot:run",
     "dev:console": "pnpm --filter console run dev",
     "build:api": "pnpm --filter api run build",
+    "build:server-java": "cd apps/server-java && mvn -DskipTests package",
     "build:console": "pnpm --filter console run build",
     "test:checklist": "node scripts/functional-checklist.mjs",
     "test:buttons": "node scripts/page-button-checklist.mjs",

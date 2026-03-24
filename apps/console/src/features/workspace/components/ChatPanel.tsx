@@ -345,8 +345,7 @@ export function ChatPanel({
 
     if (item.sourceType === 'upload') {
       const result = await api.getKnowledgeDocumentDownload(item.documentId);
-      const backendOrigin = `${window.location.protocol}//${window.location.hostname}:3000`;
-      const targetUrl = result.url.startsWith('http') ? result.url : `${backendOrigin}${result.url}`;
+      const targetUrl = result.url.startsWith('http') ? result.url : `${window.location.origin}${result.url}`;
       window.open(targetUrl, '_blank', 'noopener');
       return;
     }

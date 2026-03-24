@@ -5,7 +5,7 @@ function trimTrailingSlash(value: string) {
 }
 
 export function getServerBackendOrigin() {
-  return trimTrailingSlash(process.env.NEXT_PUBLIC_API_ORIGIN || process.env.API_ORIGIN || 'http://127.0.0.1:3000');
+  return trimTrailingSlash(process.env.NEXT_PUBLIC_API_ORIGIN || process.env.API_ORIGIN || 'http://127.0.0.1:8888');
 }
 
 export async function requestBackend<T>(path: string, init?: RequestInit): Promise<T> {

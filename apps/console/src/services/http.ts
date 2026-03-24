@@ -16,7 +16,7 @@ export function getApiBaseUrl() {
     return '';
   }
 
-  return 'http://127.0.0.1:3000';
+  return 'http://127.0.0.1:8888';
 }
 
 export function buildApiUrl(path: string) {

@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 
-const backendOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? 'http://127.0.0.1:3000';
+const backendOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? 'http://127.0.0.1:8888';
 const projectRoot = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
 
 const nextConfig: NextConfig = {
