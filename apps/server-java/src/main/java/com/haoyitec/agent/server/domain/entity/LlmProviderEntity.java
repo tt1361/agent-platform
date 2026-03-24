@@ -9,6 +9,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Data
 @TableName("llm_providers")
@@ -34,4 +35,11 @@ public class LlmProviderEntity {
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    @TableField(exist = false)
+    private String defaultModel;
+    @TableField(exist = false)
+    private Boolean secretConfigured;
+    @TableField(exist = false)
+    private Map<String, String> secretMasked;
 }

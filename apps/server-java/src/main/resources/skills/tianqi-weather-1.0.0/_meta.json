@@ -17,7 +17,7 @@
       "method": "GET",
       "url": "https://wttr.in/${input.queryEncoded}",
       "query": {
-        "format": "%l:+%c+%t,+%w,+%h,+降水%p"
+        "format": "%l: %c %t, %w, %h, 降水%p"
       }
     },
     "response": {

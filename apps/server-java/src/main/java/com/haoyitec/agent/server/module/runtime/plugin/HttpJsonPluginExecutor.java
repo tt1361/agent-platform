@@ -152,6 +152,15 @@ public class HttpJsonPluginExecutor {
 
         Object listNode = readPath(payload, listPath);
         if (!(listNode instanceof List<?> list)) {
+            if (payload instanceof String text && StringUtils.hasText(text)) {
+                // 兼容纯文本插件响应（如天气接口），统一转成单条 item 便于后续链路处理。
+                Map<String, String> single = new LinkedHashMap<>();
+                String normalized = text.replace("\r", " ").replace("\n", " ").trim();
+                single.put("title", truncate(normalized, 120));
+                single.put("snippet", normalized);
+                single.put("url", "");
+                return List.of(single);
+            }
             return List.of();
         }
         List<Map<String, String>> items = new ArrayList<>();
@@ -238,6 +247,13 @@ public class HttpJsonPluginExecutor {
             builder.append("\n");
         }
         return builder.toString().trim();
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (!StringUtils.hasText(text) || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 
     public record PluginExecutionResult(

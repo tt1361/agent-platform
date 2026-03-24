@@ -6,10 +6,11 @@ import { api } from '../../../services/api';
 import type {
   Agent,
   AgentMemory,
-    Conversation,
-    ConversationMemorySnapshot,
-    KnowledgeRetrievalItem,
-    LlmProvider,
+  Conversation,
+  ConversationMemorySnapshot,
+  KnowledgeRetrievalItem,
+  LlmModelCatalogItem,
+  LlmProvider,
   MemoryUpdateItem,
   ProviderTestResult,
   RunAgentResult,
@@ -71,6 +72,9 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
   const [citedKnowledgeRetrievals, setCitedKnowledgeRetrievals] = useState<KnowledgeRetrievalItem[]>([]);
   const [streamingAnswer, setStreamingAnswer] = useState('');
   const [providerTest, setProviderTest] = useState<ProviderTestResult | null>(null);
+  const [providerModelsMap, setProviderModelsMap] = useState<Record<string, LlmModelCatalogItem[]>>({});
+  const [sessionProviderId, setSessionProviderId] = useState('');
+  const [sessionModelKey, setSessionModelKey] = useState('');
   const [taskInput, setTaskInput] = useState('');
   const [pendingInput, setPendingInput] = useState('');
   const [interruptedInput, setInterruptedInput] = useState('');
@@ -97,16 +101,80 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
     },
     [selectedConversation],
   );
+  const activeModelSelectionKey = useMemo(() => {
+    if (!sessionProviderId) return '';
+    return `${sessionProviderId}::${sessionModelKey || ''}`;
+  }, [sessionProviderId, sessionModelKey]);
+  const sessionModelOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string; providerId: string; modelKey: string }> = [];
+    providers.forEach((provider) => {
+      const providerModels = providerModelsMap[provider.id] ?? [];
+      if (providerModels.length === 0) {
+        const fallbackModel = provider.defaultModel || provider.model;
+        if (fallbackModel) {
+          options.push({
+            value: `${provider.id}::${fallbackModel}`,
+            label: `${provider.name} · ${fallbackModel}`,
+            providerId: provider.id,
+            modelKey: fallbackModel,
+          });
+        }
+        return;
+      }
+      providerModels.forEach((item) => {
+        options.push({
+          value: `${provider.id}::${item.modelKey}`,
+          label: `${provider.name} · ${item.displayName || item.modelKey}`,
+          providerId: provider.id,
+          modelKey: item.modelKey,
+        });
+      });
+    });
+    return options;
+  }, [providers, providerModelsMap]);
   const currentModelLabel = useMemo(() => {
-    const provider = providers.find((item) => item.id === selectedAgent?.llmProviderId);
-    return provider?.model || provider?.name || '默认模型';
-  }, [providers, selectedAgent]);
+    const option = sessionModelOptions.find((item) => item.value === activeModelSelectionKey);
+    if (option) {
+      return option.label;
+    }
+    const provider = providers.find((item) => item.id === sessionProviderId)
+      ?? providers.find((item) => item.id === selectedAgent?.llmProviderId);
+    if (!provider) {
+      return '默认模型';
+    }
+    return `${provider.name} · ${sessionModelKey || provider.defaultModel || provider.model}`;
+  }, [sessionModelOptions, activeModelSelectionKey, providers, sessionProviderId, selectedAgent, sessionModelKey]);
 
   function decorateInput(inputValue: string) {
     if (replyLanguage === 'English') {
       return `${inputValue}\n\nPlease answer in English.`;
     }
     return inputValue;
+  }
+
+  async function ensureProviderModels(providerId: string) {
+    if (!providerId) return [];
+    const existing = providerModelsMap[providerId];
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+    const items = await api.listProviderModels(providerId);
+    setProviderModelsMap((current) => ({ ...current, [providerId]: items }));
+    return items;
+  }
+
+  async function applySessionModelSelection(providerId: string, preferredModelKey?: string | null) {
+    if (!providerId) return;
+    const models = await ensureProviderModels(providerId);
+    const provider = providers.find((item) => item.id === providerId);
+    const fallbackModel = preferredModelKey
+      || provider?.defaultModel
+      || provider?.model
+      || models[0]?.modelKey
+      || '';
+    const matched = models.find((item) => item.modelKey === fallbackModel);
+    setSessionProviderId(providerId);
+    setSessionModelKey((matched?.modelKey || fallbackModel || '').trim());
   }
 
   async function executeAgentRun(inputValue: string) {
@@ -132,8 +200,13 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
       await api.runAgentStream(
         selectedAgentId,
         decorateInput(nextInput),
-        selectedConversationId || undefined,
-        nextInput.slice(0, 20),
+        {
+          conversationId: selectedConversationId || undefined,
+          conversationTitle: nextInput.slice(0, 20),
+          providerId: sessionProviderId || selectedAgent?.llmProviderId,
+          modelKey: sessionModelKey || undefined,
+          attachments: [],
+        },
         abortControllerRef.current.signal,
         {
           status: (payload) => {
@@ -214,6 +287,12 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
         return [normalizedConversation, ...rest];
       });
       setStatusText('本轮会话执行完成');
+      if (result.providerId) {
+        setSessionProviderId(result.providerId);
+      }
+      if (result.modelKey) {
+        setSessionModelKey(result.modelKey);
+      }
       if (result.memoryUpdate?.updatedLongTermMemories?.length) {
         message.success(`消息发送成功，并更新了 ${result.memoryUpdate.updatedLongTermMemories.length} 条长期记忆`);
       } else {
@@ -243,13 +322,13 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  async function handleSelectModel(providerId: string) {
-    if (!selectedAgent || selectedAgent.llmProviderId === providerId) return;
-    const updatedAgent = await api.updateAgent(selectedAgent.id, { llmProviderId: providerId });
-    setAgents((current) => current.map((item) => (item.id === updatedAgent.id ? { ...item, ...updatedAgent } : item)));
+  async function handleSelectModel(selectionValue: string) {
+    const [providerId, modelKey] = String(selectionValue).split('::');
+    if (!providerId) return;
+    await applySessionModelSelection(providerId, modelKey || undefined);
     const provider = providers.find((item) => item.id === providerId);
-    setStatusText(`已切换模型为 ${provider?.model || provider?.name || '新模型'}`);
-    message.success(`已切换到 ${provider?.model || provider?.name || '新模型'}`);
+    setStatusText(`已切换会话模型为 ${provider?.name || '模型厂商'} / ${modelKey || provider?.defaultModel || provider?.model || '-'}`);
+    message.success(`已切换到 ${provider?.name || '模型厂商'} / ${modelKey || provider?.defaultModel || provider?.model || '-'}`);
   }
 
   async function refreshBaseData() {
@@ -290,11 +369,17 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
 
   useEffect(() => {
     if (!selectedAgentId) return;
+    const agent = agents.find((item) => item.id === selectedAgentId);
+    if (agent?.llmProviderId) {
+      void applySessionModelSelection(agent.llmProviderId, null).catch(() => {
+        // ignore model preload errors to avoid blocking workspace
+      });
+    }
     void refreshConversations(selectedAgentId).catch((error: Error) => setStatusText(error.message));
     void api.listAgentMemories(selectedAgentId)
       .then(setAgentMemories)
       .catch((error: Error) => setStatusText(error.message));
-  }, [selectedAgentId]);
+  }, [selectedAgentId, agents]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -321,6 +406,9 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
             }
           });
           const latestExecution = normalizedConversation.executions[normalizedConversation.executions.length - 1];
+          if (latestExecution?.providerId) {
+            await applySessionModelSelection(latestExecution.providerId, latestExecution.modelKey || null);
+          }
           if (latestExecution?.traceId) {
             const latestTrace = traces.find((t) => t) ?? { retrievals: [], citedRetrievals: [] };
             setKnowledgeRetrievals(latestTrace.retrievals ?? []);
@@ -329,11 +417,14 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
         } else {
           setKnowledgeRetrievals([]);
           setCitedKnowledgeRetrievals([]);
+          if (selectedAgent?.llmProviderId) {
+            await applySessionModelSelection(selectedAgent.llmProviderId, null);
+          }
         }
         setTraceStepsMap(newTraceStepsMap);
       })
       .catch((error: Error) => setStatusText(error.message));
-  }, [selectedConversationId]);
+  }, [selectedConversationId, selectedAgent?.llmProviderId]);
 
   async function handleCreateConversation() {
     const fallbackAgentId = selectedAgentId || selectedAgent?.id || conversations[0]?.agentId || agents[0]?.id || '';
@@ -474,6 +565,7 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
 
   async function handleProviderQuickTest() {
     const targetProvider =
+      providers.find((item) => item.id === sessionProviderId) ??
       providers.find((item) => item.id === selectedAgent?.llmProviderId) ??
       providers.find((item) => item.providerKey.includes('qwen')) ??
       providers.find((item) => item.providerKey.includes('minimax')) ??
@@ -487,7 +579,9 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
 
     setTestingProvider(true);
     try {
-      const result = await api.testProvider(targetProvider.id);
+      const result = await api.testProvider(targetProvider.id, {
+        modelKey: sessionModelKey || targetProvider.defaultModel || targetProvider.model,
+      });
       setProviderTest(result);
       setStatusText(`模型连通测试：${result.status}`);
       message.success(`模型测试完成：${targetProvider.name} / ${result.model}`);
@@ -556,13 +650,13 @@ export function WorkspacePage({ initialAgents = [], initialSkills = [], initialP
             knowledgeRetrievals={citedKnowledgeRetrievals}
             modelLabel={currentModelLabel}
             languageLabel={replyLanguage}
-            modelOptions={providers.map((provider) => ({ value: provider.id, label: `${provider.name} · ${provider.model}` }))}
-            activeModelId={selectedAgent?.llmProviderId}
+            modelOptions={sessionModelOptions.map((option) => ({ value: option.value, label: option.label }))}
+            activeModelId={activeModelSelectionKey}
             onInputChange={setTaskInput}
             onSubmit={() => void handleRunAgent()}
             onSubmitWithInput={(value) => void handleRunAgentWithInput(value)}
             onToggleLanguage={() => setReplyLanguage((current) => (current === '中文' ? 'English' : '中文'))}
-            onSelectModel={(providerId) => void handleSelectModel(providerId)}
+            onSelectModel={(selectionValue) => void handleSelectModel(selectionValue)}
             onStop={handleStop}
             onOpenContext={() => scrollToPanel('memory-overview-card')}
             onOpenSkills={() => scrollToPanel('bound-skills-card')}

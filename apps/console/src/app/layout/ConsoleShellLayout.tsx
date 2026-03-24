@@ -39,29 +39,21 @@ export function ConsoleShellLayout({ pathname, onNavigate, children }: ConsoleSh
           className="console-menu"
           onClick={({ key }) => onNavigate(String(key))}
         />
-
-        <div className="console-sider-footer">
-          <Space wrap>
-            <Tag color="gold">本地环境</Tag>
-            <Tag color="cyan">中文交互</Tag>
-          </Space>
-          <Paragraph className="sider-footer-copy">Node 22 · MySQL · MiniMax M2.5 · 会话上下文已启用</Paragraph>
-        </div>
       </Sider>
 
       <Layout>
         <Header className="console-header">
-          <div>
-            <Text className="page-kicker">产品控制台</Text>
-            <Title level={2} className="page-title">{heading.title}</Title>
-            <Paragraph className="page-subtitle">{heading.subtitle}</Paragraph>
-          </div>
+          {/*<div>*/}
+          {/*  <Text className="page-kicker">产品控制台</Text>*/}
+          {/*  <Title level={2} className="page-title">{heading.title}</Title>*/}
+          {/*  <Paragraph className="page-subtitle">{heading.subtitle}</Paragraph>*/}
+          {/*</div>*/}
 
-          <Space size={12} wrap>
-            <Badge status="processing" text="上下文会话中" />
-            <Badge status="success" text="模型在线" />
-            <Button type="default">查看文档</Button>
-          </Space>
+          {/*<Space size={12} wrap>*/}
+          {/*  <Badge status="processing" text="上下文会话中" />*/}
+          {/*  <Badge status="success" text="模型在线" />*/}
+          {/*  <Button type="default">查看文档</Button>*/}
+          {/*</Space>*/}
         </Header>
 
         <Content className="console-content">{children}</Content>

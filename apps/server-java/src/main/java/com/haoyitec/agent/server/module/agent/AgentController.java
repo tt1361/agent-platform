@@ -91,7 +91,10 @@ public class AgentController {
         Integer timeoutMs = body.get("timeoutMs") == null ? null : Integer.parseInt(String.valueOf(body.get("timeoutMs")));
         String conversationId = body.get("conversationId") == null ? null : String.valueOf(body.get("conversationId"));
         String conversationTitle = body.get("conversationTitle") == null ? null : String.valueOf(body.get("conversationTitle"));
-        return agentService.run(id, input, timeoutMs, conversationId, conversationTitle, null);
+        String providerId = body.get("providerId") == null ? null : String.valueOf(body.get("providerId"));
+        String modelKey = body.get("modelKey") == null ? null : String.valueOf(body.get("modelKey"));
+        Object attachments = body.get("attachments");
+        return agentService.run(id, input, timeoutMs, conversationId, conversationTitle, providerId, modelKey, attachments, null);
     }
 
     @PostMapping("/{id}/run/stream")
@@ -103,11 +106,15 @@ public class AgentController {
         Integer timeoutMs = body.get("timeoutMs") == null ? null : Integer.parseInt(String.valueOf(body.get("timeoutMs")));
         String conversationId = body.get("conversationId") == null ? null : String.valueOf(body.get("conversationId"));
         String conversationTitle = body.get("conversationTitle") == null ? null : String.valueOf(body.get("conversationTitle"));
+        String providerId = body.get("providerId") == null ? null : String.valueOf(body.get("providerId"));
+        String modelKey = body.get("modelKey") == null ? null : String.valueOf(body.get("modelKey"));
+        Object attachments = body.get("attachments");
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
             try {
-                agentService.run(id, input, timeoutMs, conversationId, conversationTitle, event -> pushEvent(emitter, event));
+                agentService.run(id, input, timeoutMs, conversationId, conversationTitle,
+                        providerId, modelKey, attachments, event -> pushEvent(emitter, event));
             } catch (Exception ex) {
                 log.error("agent run stream failed", ex);
                 pushRunError(emitter, ex.getMessage());

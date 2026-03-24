@@ -51,8 +51,37 @@ export interface LlmProvider {
   id: string;
   providerKey: string;
   name: string;
+  providerType?: string;
+  apiBaseUrl?: string;
   model: string;
+  defaultModel?: string;
+  secretConfigured?: boolean;
+  secretMasked?: Record<string, string> | null;
+  config?: Record<string, unknown> | null;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LlmProviderSecret {
+  providerId: string;
+  configured: boolean;
+  masked?: Record<string, string> | null;
+  updatedAt?: string | null;
+}
+
+export interface LlmModelCatalogItem {
+  id: string;
+  providerType: string;
+  modelKey: string;
+  displayName: string;
+  capabilities: string[];
+  status: string;
+  isHot: boolean;
+  sort: number;
+  config?: Record<string, unknown> | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Execution {
@@ -62,6 +91,8 @@ export interface Execution {
   outputText?: string | null;
   inputText: string;
   conversationId?: string | null;
+  providerId?: string | null;
+  modelKey?: string | null;
   createdAt?: string;
 }
 
@@ -121,6 +152,8 @@ export interface RunAgentResult {
   conversationId: string;
   status: string;
   output: string;
+  providerId?: string;
+  modelKey?: string;
   stepCount?: number;
   tokensUsed?: number;
   memoryUpdate?: {

@@ -8,7 +8,9 @@ import type {
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeRetrievalItem,
+  LlmModelCatalogItem,
   LlmProvider,
+  LlmProviderSecret,
   ProviderTestResult,
   RunAgentResult,
   Skill,
@@ -16,6 +18,23 @@ import type {
   TraceStep,
 } from '../types/api';
 import { buildApiUrl } from './http';
+
+type ChatAttachmentPayload = {
+  type?: string;
+  url?: string;
+  imageUrl?: string;
+  mimeType?: string;
+  name?: string;
+  fileId?: string;
+};
+
+type RunRequestOptions = {
+  conversationId?: string;
+  conversationTitle?: string;
+  providerId?: string;
+  modelKey?: string;
+  attachments?: ChatAttachmentPayload[];
+};
 
 async function request<T>(path: string, init?: RequestInit & { signal?: AbortSignal }): Promise<T> {
   const url = buildApiUrl(path);
@@ -177,17 +196,23 @@ export const api = {
   updateAgentStatus: (agentId: string, status: 'draft' | 'active' | 'archived') =>
     request<Agent>(`/api/v1/agents/${agentId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   deleteAgent: (agentId: string) => request<Agent>(`/api/v1/agents/${agentId}`, { method: 'DELETE' }),
-  runAgent: (agentId: string, input: string, conversationId?: string, conversationTitle?: string, signal?: AbortSignal) =>
+  runAgent: (agentId: string, input: string, options?: RunRequestOptions, signal?: AbortSignal) =>
     request<RunAgentResult>(`/api/v1/agents/${agentId}/run`, {
       method: 'POST',
-      body: JSON.stringify({ input, conversationId, conversationTitle }),
+      body: JSON.stringify({
+        input,
+        conversationId: options?.conversationId,
+        conversationTitle: options?.conversationTitle,
+        providerId: options?.providerId,
+        modelKey: options?.modelKey,
+        attachments: options?.attachments ?? [],
+      }),
       signal,
     }),
   runAgentStream: (
     agentId: string,
     input: string,
-    conversationId: string | undefined,
-    conversationTitle: string | undefined,
+    options: RunRequestOptions | undefined,
     signal: AbortSignal | undefined,
     handlers: Record<string, StreamEventHandler | undefined>,
   ) =>
@@ -195,7 +220,14 @@ export const api = {
       `/api/v1/agents/${agentId}/run/stream`,
       {
         method: 'POST',
-        body: JSON.stringify({ input, conversationId, conversationTitle }),
+        body: JSON.stringify({
+          input,
+          conversationId: options?.conversationId,
+          conversationTitle: options?.conversationTitle,
+          providerId: options?.providerId,
+          modelKey: options?.modelKey,
+          attachments: options?.attachments ?? [],
+        }),
         signal,
       },
       handlers,
@@ -222,7 +254,27 @@ export const api = {
   deleteSkillSecret: (skillId: string) => request<SkillSecret>(`/api/v1/skills/${skillId}/secret`, { method: 'DELETE' }),
   deleteSkill: (skillId: string) => request<Skill>(`/api/v1/skills/${skillId}`, { method: 'DELETE' }),
   listProviders: () => request<LlmProvider[]>('/api/v1/llm-providers'),
-  testProvider: (providerId: string) => request<ProviderTestResult>(`/api/v1/llm-providers/${providerId}/test`, { method: 'POST' }),
+  getProvider: (providerId: string) => request<LlmProvider>(`/api/v1/llm-providers/${providerId}`),
+  createProvider: (payload: Record<string, unknown>) =>
+    request<LlmProvider>('/api/v1/llm-providers', { method: 'POST', body: JSON.stringify(payload) }),
+  updateProvider: (providerId: string, payload: Record<string, unknown>) =>
+    request<LlmProvider>(`/api/v1/llm-providers/${providerId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  updateProviderStatus: (providerId: string, status: string) =>
+    request<LlmProvider>(`/api/v1/llm-providers/${providerId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  deleteProvider: (providerId: string) => request<LlmProvider>(`/api/v1/llm-providers/${providerId}`, { method: 'DELETE' }),
+  listProviderModels: (providerId: string) => request<LlmModelCatalogItem[]>(`/api/v1/llm-providers/${providerId}/models`),
+  getProviderSecret: (providerId: string) => request<LlmProviderSecret>(`/api/v1/llm-providers/${providerId}/secret`),
+  updateProviderSecret: (providerId: string, apiKey: string) =>
+    request<LlmProviderSecret>(`/api/v1/llm-providers/${providerId}/secret`, { method: 'PUT', body: JSON.stringify({ apiKey }) }),
+  deleteProviderSecret: (providerId: string) => request<LlmProviderSecret>(`/api/v1/llm-providers/${providerId}/secret`, { method: 'DELETE' }),
+  testProvider: (providerId: string, payload?: Record<string, unknown>) =>
+    request<ProviderTestResult>(`/api/v1/llm-providers/${providerId}/test`, { method: 'POST', body: JSON.stringify(payload ?? {}) }),
+  listModelCatalog: () => request<LlmModelCatalogItem[]>('/api/v1/llm-model-catalog'),
+  createModelCatalogItem: (payload: Record<string, unknown>) =>
+    request<LlmModelCatalogItem>('/api/v1/llm-model-catalog', { method: 'POST', body: JSON.stringify(payload) }),
+  updateModelCatalogItem: (id: string, payload: Record<string, unknown>) =>
+    request<LlmModelCatalogItem>(`/api/v1/llm-model-catalog/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteModelCatalogItem: (id: string) => request<LlmModelCatalogItem>(`/api/v1/llm-model-catalog/${id}`, { method: 'DELETE' }),
   getTrace: (traceId: string) => request<{ execution: Execution; steps: TraceStep[]; retrievals: KnowledgeRetrievalItem[]; citedRetrievals: KnowledgeRetrievalItem[] }>(`/api/v1/traces/${traceId}`),
   listAgentMemories: (agentId: string) => request<AgentMemory[]>(`/api/v1/agents/${agentId}/memories`),
   updateAgentMemoryImportance: (agentId: string, memoryId: string, importance: number) =>

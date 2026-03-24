@@ -185,8 +185,12 @@ public class AgentService {
                                    Integer timeoutMs,
                                    String conversationId,
                                    String conversationTitle,
+                                   String providerId,
+                                   String modelKey,
+                                   Object attachments,
                                    Consumer<Map<String, Object>> eventConsumer) {
-        return runtimeService.run(agentId, input, timeoutMs, conversationId, conversationTitle, eventConsumer);
+        return runtimeService.run(agentId, input, timeoutMs, conversationId, conversationTitle,
+                providerId, modelKey, attachments, eventConsumer);
     }
 
     private String value(Map<String, Object> input, String key) {

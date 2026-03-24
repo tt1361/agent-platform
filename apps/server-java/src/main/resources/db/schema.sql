@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS llm_providers (
   provider_key VARCHAR(100) NOT NULL UNIQUE COMMENT '提供商标识',
   name VARCHAR(255) NOT NULL COMMENT '名称',
   provider_type VARCHAR(50) NOT NULL COMMENT '提供商类型',
-  model VARCHAR(255) NOT NULL COMMENT '模型名称',
+  model VARCHAR(255) NOT NULL COMMENT '默认模型Key',
   api_base_url VARCHAR(1024) COMMENT 'API基础地址',
   api_key_masked VARCHAR(255) COMMENT '脱敏后的API密钥',
   config JSON COMMENT '提供商配置(JSON)',
@@ -15,6 +15,32 @@ CREATE TABLE IF NOT EXISTS llm_providers (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   INDEX idx_llm_providers_status(status),
   INDEX idx_llm_providers_type(provider_type)
+);
+
+CREATE TABLE IF NOT EXISTS llm_model_catalog (
+  id VARCHAR(36) PRIMARY KEY COMMENT '主键ID',
+  provider_type VARCHAR(50) NOT NULL COMMENT '提供商类型',
+  model_key VARCHAR(255) NOT NULL COMMENT '模型Key',
+  display_name VARCHAR(255) NOT NULL COMMENT '展示名称',
+  capabilities JSON COMMENT '能力标签(JSON)',
+  status VARCHAR(32) NOT NULL DEFAULT 'active' COMMENT '状态',
+  is_hot TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否热门模型',
+  sort INT NOT NULL DEFAULT 100 COMMENT '排序值',
+  config JSON COMMENT '扩展配置(JSON)',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_model_provider(provider_type, model_key),
+  INDEX idx_model_catalog_status(status),
+  INDEX idx_model_catalog_provider(provider_type, sort)
+);
+
+CREATE TABLE IF NOT EXISTS llm_provider_secrets (
+  provider_id VARCHAR(36) PRIMARY KEY COMMENT '厂商账号ID',
+  secret_ciphertext TEXT NOT NULL COMMENT '密钥密文',
+  secret_masked JSON COMMENT '脱敏密钥(JSON)',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  CONSTRAINT fk_provider_secrets_provider FOREIGN KEY (provider_id) REFERENCES llm_providers(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS skills (
@@ -84,6 +110,7 @@ CREATE TABLE IF NOT EXISTS executions (
   output_text TEXT COMMENT '输出文本',
   status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT '状态',
   provider_id VARCHAR(36) COMMENT '提供商ID',
+  model_key VARCHAR(255) COMMENT '模型Key',
   step_count INT COMMENT '执行步数',
   tokens_used INT COMMENT '消耗Token数',
   cost DECIMAL(10,6) COMMENT '调用成本',

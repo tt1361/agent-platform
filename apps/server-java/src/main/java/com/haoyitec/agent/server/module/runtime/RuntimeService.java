@@ -56,6 +56,9 @@ public class RuntimeService {
                                    Integer overrideTimeoutMs,
                                    String conversationId,
                                    String conversationTitle,
+                                   String providerId,
+                                   String modelKey,
+                                   Object attachments,
                                    Consumer<Map<String, Object>> eventConsumer) {
         AgentEntity agent = agentMapper.selectById(agentId);
         if (agent == null) {
@@ -77,7 +80,8 @@ public class RuntimeService {
         execution.setTraceId(traceId);
         execution.setInputText(input);
         execution.setStatus("running");
-        execution.setProviderId(agent.getLlmProviderId());
+        execution.setProviderId(StringUtils.hasText(providerId) ? providerId : agent.getLlmProviderId());
+        execution.setModelKey(StringUtils.hasText(modelKey) ? modelKey : null);
         execution.setStartedAt(startedAt);
         executionMapper.insert(execution);
 
@@ -96,6 +100,25 @@ public class RuntimeService {
         }
 
         try {
+            String effectiveProviderId = StringUtils.hasText(providerId) ? providerId : agent.getLlmProviderId();
+            if (!StringUtils.hasText(effectiveProviderId)) {
+                throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "未配置可用模型厂商，请先绑定或在请求中指定 providerId");
+            }
+            List<AiChatService.ChatAttachment> parsedAttachments = aiChatService.parseAttachments(attachments);
+            AiChatService.ChatRequest chatRequest = new AiChatService.ChatRequest(
+                    effectiveProviderId,
+                    StringUtils.hasText(modelKey) ? modelKey : null,
+                    parsedAttachments,
+                    List.of(),
+                    null,
+                    timeoutMs
+            );
+            AiChatService.ChatRoute chatRoute = aiChatService.resolveRoute(chatRequest);
+            executionMapper.update(null, new LambdaUpdateWrapper<ExecutionEntity>()
+                    .eq(ExecutionEntity::getId, execution.getId())
+                    .set(ExecutionEntity::getProviderId, chatRoute.providerId())
+                    .set(ExecutionEntity::getModelKey, chatRoute.modelKey()));
+
             List<SkillEntity> boundSkills = listBoundActiveSkills(agent.getSkillIds());
             int stepIndex = 0;
             List<KnowledgeRetrievalItem> retrievals = retrievalService.retrieve(input, 8, execution.getId());
@@ -152,20 +175,16 @@ public class RuntimeService {
 
             String answer;
             String thoughtContent;
-            // 若插件已返回结构化结果，优先“基于插件结果直出”，防止模型二次发挥导致内容编造。
-            String groundedSkillAnswer = tryBuildGroundedSkillAnswer(skillToolResult);
-            if (StringUtils.hasText(groundedSkillAnswer)) {
-                answer = groundedSkillAnswer;
-                thoughtContent = "已基于插件实时返回结果生成答案（未进行模型补全）";
-            } else {
-                String systemPrompt = StringUtils.hasText(agent.getSystemPrompt())
-                        ? agent.getSystemPrompt()
-                        : "你是一名乐于助人的中文智能体。";
-                String enhancedPrompt = buildPrompt(input, retrievals, activeConversation.getId(), agent.getId(),
-                        skillToolResult.map(SkillToolResult::promptContext).orElse(null));
-                answer = aiChatService.chat(systemPrompt, enhancedPrompt);
-                thoughtContent = "模型已完成思考并开始生成答案";
-            }
+            String systemPrompt = StringUtils.hasText(agent.getSystemPrompt())
+                    ? agent.getSystemPrompt()
+                    : "你是一名乐于助人的中文智能体。";
+            // 始终让模型基于技能/知识结果进行二次组织，输出更自然的最终答案。
+            String enhancedPrompt = buildPrompt(input, retrievals, activeConversation.getId(), agent.getId(),
+                    skillToolResult.map(SkillToolResult::promptContext).orElse(null));
+            answer = aiChatService.chat(systemPrompt, enhancedPrompt, chatRequest);
+            thoughtContent = skillToolResult.isPresent()
+                    ? "模型已基于技能返回结果完成补全回答"
+                    : "模型已完成思考并开始生成答案";
 
             Map<String, Object> thoughtStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "thought", thoughtContent,
                     null, null, null);
@@ -204,6 +223,8 @@ public class RuntimeService {
             result.put("conversationId", activeConversation.getId());
             result.put("status", "succeeded");
             result.put("output", answer);
+            result.put("providerId", chatRoute.providerId());
+            result.put("modelKey", chatRoute.modelKey());
             result.put("stepCount", stepIndex);
             result.put("tokensUsed", Math.max(answer.length() / 2, 1));
             result.put("memoryUpdate", Map.of(
@@ -367,7 +388,7 @@ public class RuntimeService {
         if (items.isEmpty()) {
             String summary = sanitizeLine(asText(result.toolOutput().get("summary")));
             if (StringUtils.hasText(summary)) {
-                return "已触发技能「" + toolName + "」，但未检索到可用条目。\n返回摘要："
+                return "技能「" + toolName + "」返回摘要："
                         + truncate(summary, 220)
                         + "\n注：仅基于插件返回，不进行编造补全。";
             }
@@ -390,7 +411,7 @@ public class RuntimeService {
             }
             builder.append(displayIndex++).append(". ");
             builder.append(StringUtils.hasText(title) ? title : "-");
-            if (StringUtils.hasText(snippet) && !"-".equals(snippet)) {
+            if (StringUtils.hasText(snippet) && !"-".equals(snippet) && !snippet.equals(title)) {
                 builder.append("：").append(snippet);
             }
             if (StringUtils.hasText(url)) {
