@@ -17,8 +17,8 @@ public class ModelCatalogBootstrapService implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         modelCatalogService.upsertTemplate("openai-compatible", "gpt-4o", "OpenAI GPT-4o", List.of("chat", "vision", "tool_calling"), 10);
         modelCatalogService.upsertTemplate("openai-compatible", "gpt-4.1", "OpenAI GPT-4.1", List.of("chat", "tool_calling"), 11);
-        modelCatalogService.upsertTemplate("anthropic", "claude-3-7-sonnet-20250219", "Anthropic Claude 3.7 Sonnet", List.of("chat", "vision", "tool_calling"), 20);
-        modelCatalogService.upsertTemplate("google-gemini", "gemini-2.5-pro", "Google Gemini 2.5 Pro", List.of("chat", "vision", "tool_calling"), 30);
+        modelCatalogService.upsertTemplate("openai-compatible", "claude-3-7-sonnet-20250219", "Anthropic Claude 3.7 Sonnet", List.of("chat", "vision", "tool_calling"), 20);
+        modelCatalogService.upsertTemplate("openai-compatible", "gemini-2.5-pro", "Google Gemini 2.5 Pro", List.of("chat", "vision", "tool_calling"), 30);
         modelCatalogService.upsertTemplate("openai-compatible", "grok-2-latest", "xAI Grok 2", List.of("chat", "vision", "tool_calling"), 40);
         modelCatalogService.upsertTemplate("openai-compatible", "llama-3.3-70b-instruct", "Meta Llama 3.3 70B", List.of("chat", "tool_calling"), 50);
         modelCatalogService.upsertTemplate("openai-compatible", "mistral-large-latest", "Mistral Large", List.of("chat", "tool_calling"), 60);

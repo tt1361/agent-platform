@@ -31,8 +31,9 @@ public class ModelCatalogService {
     }
 
     public List<Map<String, Object>> listActiveByProviderType(String providerType) {
+        String normalizedProviderType = normalizeProviderType(providerType);
         List<LlmModelCatalogEntity> entities = catalogMapper.selectList(new LambdaQueryWrapper<LlmModelCatalogEntity>()
-                .eq(LlmModelCatalogEntity::getProviderType, providerType)
+                .eq(LlmModelCatalogEntity::getProviderType, normalizedProviderType)
                 .eq(LlmModelCatalogEntity::getStatus, "active")
                 .orderByAsc(LlmModelCatalogEntity::getSort)
                 .orderByAsc(LlmModelCatalogEntity::getModelKey));
@@ -43,8 +44,9 @@ public class ModelCatalogService {
         if (!StringUtils.hasText(providerType) || !StringUtils.hasText(modelKey)) {
             return null;
         }
+        String normalizedProviderType = normalizeProviderType(providerType);
         return catalogMapper.selectOne(new LambdaQueryWrapper<LlmModelCatalogEntity>()
-                .eq(LlmModelCatalogEntity::getProviderType, providerType)
+                .eq(LlmModelCatalogEntity::getProviderType, normalizedProviderType)
                 .eq(LlmModelCatalogEntity::getModelKey, modelKey)
                 .eq(LlmModelCatalogEntity::getStatus, "active")
                 .last("LIMIT 1"));
@@ -130,7 +132,7 @@ public class ModelCatalogService {
             throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "providerType/modelKey/displayName 必填");
         }
 
-        entity.setProviderType(providerType.trim());
+        entity.setProviderType(normalizeProviderType(providerType));
         entity.setModelKey(modelKey.trim());
         entity.setDisplayName(displayName.trim());
 
@@ -190,6 +192,19 @@ public class ModelCatalogService {
             return defaultValue;
         }
         return String.valueOf(value);
+    }
+
+    private String normalizeProviderType(String providerType) {
+        String normalized = providerType == null ? "" : providerType.trim().toLowerCase();
+        if (!StringUtils.hasText(normalized)) {
+            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "providerType 必填");
+        }
+        return switch (normalized) {
+            case "openai-compatible", "openai", "qwen", "deepseek", "minimax", "zhipu", "baidu", "hunyuan", "xai", "mistral", "cohere", "meta",
+                 "anthropic", "claude", "google", "gemini", "google-gemini" -> "openai-compatible";
+            default -> throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                    "仅支持兼容协议类型：openai-compatible");
+        };
     }
 
     private Integer intValue(Object value, Integer defaultValue) {

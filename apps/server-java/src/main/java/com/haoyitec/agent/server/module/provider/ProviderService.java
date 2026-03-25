@@ -262,10 +262,10 @@ public class ProviderService {
             throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "providerType 必填");
         }
         return switch (normalized) {
-            case "openai-compatible", "openai", "qwen", "deepseek", "minimax", "zhipu", "baidu", "hunyuan", "xai", "mistral", "cohere", "meta" -> "openai-compatible";
-            case "anthropic", "claude" -> "anthropic";
-            case "google", "gemini", "google-gemini" -> "google-gemini";
-            default -> normalized;
+            case "openai-compatible", "openai", "qwen", "deepseek", "minimax", "zhipu", "baidu", "hunyuan", "xai", "mistral", "cohere", "meta",
+                 "anthropic", "claude", "google", "gemini", "google-gemini" -> "openai-compatible";
+            default -> throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                    "仅支持兼容协议类型：openai-compatible");
         };
     }
 

@@ -36,9 +36,7 @@ interface ModelFormValues {
 }
 
 const providerTypeOptions = [
-  { label: 'OpenAI Compatible', value: 'openai-compatible' },
-  { label: 'Anthropic', value: 'anthropic' },
-  { label: 'Google Gemini', value: 'google-gemini' },
+  { label: 'Alibaba Compatible', value: 'openai-compatible' },
 ];
 
 export function ProvidersPage({ initialProviders = [], initialMessageText = '加载中...' }: ProvidersPageProps) {

@@ -8,8 +8,8 @@ INSERT INTO llm_model_catalog (id, provider_type, model_key, display_name, capab
 VALUES
 ('m-openai-gpt-4o', 'openai-compatible', 'gpt-4o', 'OpenAI GPT-4o', '["chat","vision","tool_calling"]', 'active', 1, 10, '{}'),
 ('m-openai-gpt-4.1', 'openai-compatible', 'gpt-4.1', 'OpenAI GPT-4.1', '["chat","tool_calling"]', 'active', 1, 11, '{}'),
-('m-anthropic-claude-3-7', 'anthropic', 'claude-3-7-sonnet-20250219', 'Anthropic Claude 3.7 Sonnet', '["chat","vision","tool_calling"]', 'active', 1, 20, '{}'),
-('m-google-gemini-2-5-pro', 'google-gemini', 'gemini-2.5-pro', 'Google Gemini 2.5 Pro', '["chat","vision","tool_calling"]', 'active', 1, 30, '{}'),
+('m-anthropic-claude-3-7', 'openai-compatible', 'claude-3-7-sonnet-20250219', 'Anthropic Claude 3.7 Sonnet', '["chat","vision","tool_calling"]', 'active', 1, 20, '{}'),
+('m-google-gemini-2-5-pro', 'openai-compatible', 'gemini-2.5-pro', 'Google Gemini 2.5 Pro', '["chat","vision","tool_calling"]', 'active', 1, 30, '{}'),
 ('m-xai-grok-2', 'openai-compatible', 'grok-2-latest', 'xAI Grok 2', '["chat","vision","tool_calling"]', 'active', 1, 40, '{}'),
 ('m-meta-llama-3-3-70b', 'openai-compatible', 'llama-3.3-70b-instruct', 'Meta Llama 3.3 70B', '["chat","tool_calling"]', 'active', 1, 50, '{}'),
 ('m-mistral-large', 'openai-compatible', 'mistral-large-latest', 'Mistral Large', '["chat","tool_calling"]', 'active', 1, 60, '{}'),
