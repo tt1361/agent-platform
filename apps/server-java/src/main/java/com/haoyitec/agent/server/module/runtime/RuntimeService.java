@@ -175,22 +175,30 @@ public class RuntimeService {
 
             String answer;
             String thoughtContent;
+            boolean streamReply = eventConsumer != null;
             String systemPrompt = StringUtils.hasText(agent.getSystemPrompt())
                     ? agent.getSystemPrompt()
                     : "你是一名乐于助人的中文智能体。";
             // 始终让模型基于技能/知识结果进行二次组织，输出更自然的最终答案。
             String enhancedPrompt = buildPrompt(input, retrievals, activeConversation.getId(), agent.getId(),
                     skillToolResult.map(SkillToolResult::promptContext).orElse(null));
-            answer = aiChatService.chat(systemPrompt, enhancedPrompt, chatRequest);
             thoughtContent = skillToolResult.isPresent()
                     ? "模型已基于技能返回结果完成补全回答"
                     : "模型已完成思考并开始生成答案";
-
             Map<String, Object> thoughtStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "thought", thoughtContent,
                     null, null, null);
             emit(eventConsumer, Map.of("type", "trace_step", "step", thoughtStep));
 
+            if (streamReply) {
+                answer = streamModelAnswer(execution.getId(), systemPrompt, enhancedPrompt, chatRequest, eventConsumer);
+            } else {
+                answer = aiChatService.chat(systemPrompt, enhancedPrompt, chatRequest);
+            }
+
             Map<String, Object> finalStep = recordTraceStep(execution.getId(), traceId, stepIndex++, "final_answer", answer, null, null, null);
+            if (streamReply) {
+                finalStep.put("streamed", true);
+            }
             emit(eventConsumer, Map.of("type", "trace_step", "step", finalStep));
 
             LocalDateTime endedAt = LocalDateTime.now();
@@ -319,6 +327,30 @@ public class RuntimeService {
         if (eventConsumer != null) {
             eventConsumer.accept(event);
         }
+    }
+
+    private String streamModelAnswer(String executionId,
+                                     String systemPrompt,
+                                     String userPrompt,
+                                     AiChatService.ChatRequest chatRequest,
+                                     Consumer<Map<String, Object>> eventConsumer) {
+        StringBuilder answerBuilder = new StringBuilder();
+        for (String delta : aiChatService.chatStream(systemPrompt, userPrompt, chatRequest).toIterable()) {
+            if (!StringUtils.hasText(delta)) {
+                continue;
+            }
+            answerBuilder.append(delta);
+            emit(eventConsumer, Map.of(
+                    "type", "answer_delta",
+                    "executionId", executionId,
+                    "delta", delta
+            ));
+        }
+        String answer = answerBuilder.toString().trim();
+        if (!StringUtils.hasText(answer)) {
+            throw new BizException(HttpStatus.BAD_GATEWAY, "AI_CALL_FAILED", "模型返回内容为空");
+        }
+        return answer;
     }
 
     private Integer countConversationSuccessExecutions(String conversationId) {

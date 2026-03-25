@@ -175,13 +175,25 @@ public class AgentController {
                             "content", step.get("toolOutput") == null ? "{}" : String.valueOf(step.get("toolOutput"))
                     ));
                 } else if ("final_answer".equals(stepType)) {
-                    emit(emitter, Map.of(
-                            "type", "TEXT_MESSAGE_CONTENT",
-                            "messageId", step.get("executionId"),
-                            "delta", step.get("content")
-                    ));
+                    boolean streamed = Boolean.TRUE.equals(step.get("streamed"));
+                    if (!streamed) {
+                        emit(emitter, Map.of(
+                                "type", "TEXT_MESSAGE_CONTENT",
+                                "messageId", step.get("executionId"),
+                                "delta", step.get("content")
+                        ));
+                    }
                 }
                 emit(emitter, Map.of("type", "CUSTOM", "customEvent", "trace_step", "payload", step));
+                return;
+            }
+
+            if ("answer_delta".equals(type)) {
+                emit(emitter, Map.of(
+                        "type", "TEXT_MESSAGE_CONTENT",
+                        "messageId", event.get("executionId"),
+                        "delta", event.get("delta")
+                ));
                 return;
             }
 
