@@ -1,13 +1,30 @@
 package com.haoyitec.agent.server.module.agent;
 
 import com.haoyitec.agent.server.common.exception.BizException;
+import com.haoyitec.agent.server.common.util.JsonUtil;
+import com.haoyitec.agent.server.module.agent.agui.AGUIEvent;
+import com.haoyitec.agent.server.module.agent.agui.AGUIEventMapper;
+import com.haoyitec.agent.server.module.agent.agui.AGUIMessage;
+import com.haoyitec.agent.server.module.agent.agui.AGUIType;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -123,6 +140,110 @@ public class AgentController {
             }
         });
         return emitter;
+    }
+
+    @Operation(
+            summary = "Run an agent with CopilotKit AGUI streaming",
+            description = "Streams AGUI events for CopilotKit-compatible clients using text/event-stream."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "SSE stream established"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Validation error",
+                    content = @Content(schema = @Schema(implementation = com.haoyitec.agent.server.common.web.ApiResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Server error",
+                    content = @Content(schema = @Schema(implementation = com.haoyitec.agent.server.common.web.ApiResponse.class))
+            )
+    })
+    @PostMapping(
+            value = "/{id}/run/copilotkit",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE
+    )
+    public Flux<ServerSentEvent<String>> runCopilotkit(
+            @Parameter(description = "Agent id", required = true)
+            @PathVariable String id,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    description = "CopilotKit RunAgentInput payload"
+            )
+            @RequestBody AGUIType.RunAgentInput input
+    ) {
+        validateCopilotKitInput(input);
+        AGUIMessage lastUserMessage = input.lastUserMessage().orElseThrow(
+                () -> new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "messages 中缺少 user 文本消息")
+        );
+        AGUIEventMapper eventMapper = new AGUIEventMapper(input.threadId(), input.normalizedRunId());
+
+        return Flux.create(sink -> {
+            emitAguiEvents(sink, List.of(eventMapper.runStartedEvent()));
+            CompletableFuture.runAsync(() -> runCopilotkitInternal(id, input, lastUserMessage, eventMapper, sink));
+        });
+    }
+
+    private void runCopilotkitInternal(String id,
+                                       AGUIType.RunAgentInput input,
+                                       AGUIMessage lastUserMessage,
+                                       AGUIEventMapper eventMapper,
+                                       FluxSink<ServerSentEvent<String>> sink) {
+        try {
+            agentService.run(
+                    id,
+                    lastUserMessage.content(),
+                    null,
+                    input.threadId(),
+                    null,
+                    null,
+                    null,
+                    List.of(),
+                    event -> emitAguiEvents(sink, eventMapper.mapRuntimeEvent(event))
+            );
+        } catch (Exception ex) {
+            log.error("agent copilotkit stream failed, agentId={}", id, ex);
+            emitAguiEvents(sink, eventMapper.streamErrorEvents(ex));
+        } finally {
+            sink.complete();
+        }
+    }
+
+    private void validateCopilotKitInput(AGUIType.RunAgentInput input) {
+        if (input == null) {
+            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "请求体不能为空");
+        }
+        if (!StringUtils.hasText(input.threadId())) {
+            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "threadId 必填");
+        }
+        if (input.messages() == null || input.messages().isEmpty()) {
+            throw new BizException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "messages 必填");
+        }
+    }
+
+    private void emitAguiEvents(FluxSink<ServerSentEvent<String>> sink, List<AGUIEvent> events) {
+        for (AGUIEvent event : events) {
+            try {
+                String eventData = JsonUtil.toJson(event);
+                sink.next(ServerSentEvent.<String>builder()
+                        .event(event.type().name())
+                        .data(eventData)
+                        .build());
+            } catch (Exception ex) {
+                log.warn("serialize AGUI event failed: {}", ex.getMessage());
+                AGUIEvent.RunErrorEvent runErrorEvent = new AGUIEvent.RunErrorEvent("Error serializing event", "SERIALIZE_ERROR");
+                try {
+                    String fallback = JsonUtil.toJson(runErrorEvent);
+                    sink.next(ServerSentEvent.<String>builder()
+                            .event(runErrorEvent.type().name())
+                            .data(fallback)
+                            .build());
+                } catch (Exception ignored) {
+                    // ignore secondary serialization failure
+                }
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

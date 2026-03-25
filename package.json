@@ -8,6 +8,7 @@
     "build:api": "pnpm --filter api run build",
     "build:server-java": "cd apps/server-java && mvn -DskipTests package",
     "build:console": "pnpm --filter console run build",
+    "docs:openapi:server-java": "node scripts/export-openapi-server-java.mjs",
     "test:checklist": "node scripts/functional-checklist.mjs",
     "test:buttons": "node scripts/page-button-checklist.mjs",
     "db:push": "node scripts/prisma-with-env.mjs db push",

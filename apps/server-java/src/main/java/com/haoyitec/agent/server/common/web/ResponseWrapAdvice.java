@@ -1,5 +1,6 @@
 package com.haoyitec.agent.server.common.web;
 
+import org.reactivestreams.Publisher;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,9 @@ public class ResponseWrapAdvice implements ResponseBodyAdvice<Object> {
     @Override
     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
         Class<?> parameterType = returnType.getParameterType();
-        if (ResponseEntity.class.isAssignableFrom(parameterType) || SseEmitter.class.isAssignableFrom(parameterType)) {
+        if (ResponseEntity.class.isAssignableFrom(parameterType)
+                || SseEmitter.class.isAssignableFrom(parameterType)
+                || Publisher.class.isAssignableFrom(parameterType)) {
             return false;
         }
         return true;
@@ -35,6 +38,9 @@ public class ResponseWrapAdvice implements ResponseBodyAdvice<Object> {
             return ApiResponse.success(null);
         }
         if (body instanceof ApiResponse<?>) {
+            return body;
+        }
+        if (MediaType.TEXT_EVENT_STREAM.includes(selectedContentType)) {
             return body;
         }
         if (body instanceof ResponseEntity<?> || body instanceof SseEmitter || body instanceof byte[]) {

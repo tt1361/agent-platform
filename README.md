@@ -130,7 +130,14 @@ npm run build:console
 
 # 构建 Java 后端
 npm run build:server-java
+
+# 生成 Java 服务 OpenAPI 文档
+npm run docs:openapi:server-java
 ```
+
+执行 `npm run docs:openapi:server-java` 后会产出：
+
+- `doc/openapi.server-java.json`
 
 ## 六、已知限制
 
